@@ -57,55 +57,7 @@ RUN mkdir -p /workspace && chown claude:claude /workspace
 
 # Entrypoint: lazily initialises home-dir tools (swiftly, Swift, Claude Code) on first
 # run, since /home/claude is a volume mount that may start empty.
-COPY --chmod=755 <<'EOF' /entrypoint.sh
-#!/bin/bash
-set -e
-
-# Adjust docker group GID to match the mounted socket, if present
-if [ -S /var/run/docker.sock ]; then
-    SOCK_GID=$(stat -c '%g' /var/run/docker.sock)
-    CURRENT_GID=$(getent group docker | cut -d: -f3)
-    if [ "$SOCK_GID" != "$CURRENT_GID" ] && [ "$SOCK_GID" != "0" ]; then
-        sudo groupmod -g "$SOCK_GID" docker
-    fi
-fi
-
-# Ensure volume-mounted user home is owned by claude
-sudo chown -R claude:claude /home/claude 2>/dev/null || true
-
-# ── Swiftly ────────────────────────────────────────────────────────────────────
-SWIFTLY_HOME="${SWIFTLY_HOME_DIR:-$HOME/.local/share/swiftly}"
-
-if [ ! -x "$SWIFTLY_HOME/bin/swiftly" ]; then
-    echo "==> Installing swiftly..."
-    ARCH=$(uname -m)
-    curl -fsSL "https://download.swift.org/swiftly/linux/swiftly-${ARCH}.tar.gz" \
-        -o /tmp/swiftly.tar.gz
-    tar -zxf /tmp/swiftly.tar.gz -C /tmp
-    /tmp/swiftly init --quiet-shell-followup --assume-yes
-    rm -f /tmp/swiftly /tmp/swiftly.tar.gz
-fi
-
-# Source swiftly environment so PATH is updated
-[ -f "$SWIFTLY_HOME/env.sh" ] && . "$SWIFTLY_HOME/env.sh"
-
-# Install latest stable Swift toolchain if none is active
-if command -v swiftly &>/dev/null && ! swift --version &>/dev/null 2>&1; then
-    echo "==> Installing Swift latest release..."
-    swiftly install --assume-yes latest
-fi
-
-# ── Claude Code ────────────────────────────────────────────────────────────────
-if [ ! -x "$HOME/.claude/bin/claude" ] && ! command -v claude &>/dev/null; then
-    echo "==> Installing Claude Code..."
-    curl -fsSL https://claude.ai/install.sh | bash
-fi
-
-# Extend PATH with all user-local bin directories
-export PATH="$HOME/.claude/bin:$HOME/.local/bin:$SWIFTLY_HOME/bin:$PATH"
-
-exec claude "$@"
-EOF
+COPY --chmod=755 bootstrap.sh /entrypoint.sh
 
 VOLUME ["/home/claude", "/workspace"]
 
