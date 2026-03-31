@@ -16,6 +16,21 @@ CLAUDEC_WORKSPACE_CANONICAL="$(cd "${CLAUDEC_WORKSPACE}" && pwd -P)"
 CLAUDEC_WORKSPACE_HASH="$(printf '%s' "${CLAUDEC_WORKSPACE_CANONICAL}" | sha256sum | cut -d' ' -f1)"
 CLAUDEC_WORKSPACE_CONTAINER="/workspace/${CLAUDEC_WORKSPACE_HASH}"
 
+# ── Auto-update image ─────────────────────────────────────────────────────────
+if [[ "${CLAUDEC_IMAGE_AUTO_UPDATE:-1}" != "0" ]]; then
+    _old_id="$(container image inspect "${CLAUDEC_IMAGE}" 2>/dev/null | grep -o 'sha256:[a-f0-9]*' | tail -1 || true)"
+    if container image pull --progress none "${CLAUDEC_IMAGE}" >/dev/null 2>&1; then
+        _new_id="$(container image inspect "${CLAUDEC_IMAGE}" 2>/dev/null | grep -o 'sha256:[a-f0-9]*' | tail -1 || true)"
+        if [[ -n "${_new_id}" && "${_old_id}" != "${_new_id}" ]]; then
+            echo "claudec: loaded newer image for ${CLAUDEC_IMAGE}"
+            if [[ "${CLAUDEC_IMAGE_AUTO_UPDATE_REMOVE_OLD:-1}" != "0" && -n "${_old_id}" ]]; then
+                container image delete --force "${_old_id}" >/dev/null 2>&1 || true
+            fi
+        fi
+    fi
+    unset _old_id _new_id
+fi
+
 # ── Run ───────────────────────────────────────────────────────────────────────
 CONTAINER_ARGS=(
     --rm -it
