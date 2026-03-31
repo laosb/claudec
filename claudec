@@ -33,4 +33,4 @@ exec container run --rm -it \
     -w "${CLAUDEC_WORKSPACE_CONTAINER}" \
     "${CLAUDEC_IMAGE}" \
     "${CLAUDEC_ENTRYPOINT[@]}" \
-    "${CLAUDEC_ARGS[@]}"
+    "${CLAUDEC_ARGS[@]+"${CLAUDEC_ARGS[@]}"}"
