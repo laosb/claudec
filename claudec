@@ -16,10 +16,21 @@ CLAUDEC_WORKSPACE_CANONICAL="$(cd "${CLAUDEC_WORKSPACE}" && pwd -P)"
 CLAUDEC_WORKSPACE_HASH="$(printf '%s' "${CLAUDEC_WORKSPACE_CANONICAL}" | sha256sum | cut -d' ' -f1)"
 CLAUDEC_WORKSPACE_CONTAINER="/workspace/${CLAUDEC_WORKSPACE_HASH}"
 
+# ── Handle sub-commands ───────────────────────────────────────────────────────
+if [[ "${1:-}" == "sh" ]]; then
+    shift
+    CLAUDEC_ENTRYPOINT=(/bin/bash)
+    CLAUDEC_ARGS=("$@")
+else
+    CLAUDEC_ENTRYPOINT=(claude)
+    CLAUDEC_ARGS=("$@")
+fi
+
 # ── Run ───────────────────────────────────────────────────────────────────────
 exec container run --rm -it \
     -v "${CLAUDEC_PROFILE_DIR}/home:/home/claude" \
     -v "${CLAUDEC_WORKSPACE}:${CLAUDEC_WORKSPACE_CONTAINER}" \
     -w "${CLAUDEC_WORKSPACE_CONTAINER}" \
     "${CLAUDEC_IMAGE}" \
-    "$@"
+    "${CLAUDEC_ENTRYPOINT[@]}" \
+    "${CLAUDEC_ARGS[@]}"
