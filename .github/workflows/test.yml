@@ -17,7 +17,7 @@ jobs:
         run: brew install container
 
       - name: Start container system
-        run: container system start
+        run: container system start --enable-kernel-install
 
       - name: Pull image
         run: container image pull ghcr.io/laosb/claudec:latest
