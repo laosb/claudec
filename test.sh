@@ -26,8 +26,9 @@ PASS=0
 FAIL=0
 FAILURES=()
 
-# Disable auto-update during tests to avoid network variance
+# Disable auto-update and update check during tests to avoid network variance
 export CLAUDEC_IMAGE_AUTO_UPDATE=0
+export CLAUDEC_CHECK_UPDATE=0
 
 # Use the local bootstrap.sh so tests run against the current code,
 # not whatever is baked into the image.
