@@ -31,6 +31,20 @@ if [[ "${CLAUDEC_IMAGE_AUTO_UPDATE:-1}" != "0" ]]; then
     unset _old_id _new_id
 fi
 
+# ── Exclude folders ───────────────────────────────────────────────────────────
+CLAUDEC_EXCLUDE_MOUNTS=()
+if [[ -n "${CLAUDEC_EXCLUDE_FOLDERS:-}" ]]; then
+    _empty_dir="$(mktemp -d /tmp/claudec-empty.XXXXXX)"
+    IFS=',' read -ra _folders <<< "${CLAUDEC_EXCLUDE_FOLDERS}"
+    for _f in "${_folders[@]}"; do
+        _f="${_f#/}"   # strip leading slash
+        _f="${_f%/}"   # strip trailing slash
+        [[ -z "$_f" ]] && continue
+        CLAUDEC_EXCLUDE_MOUNTS+=(-v "${_empty_dir}:${CLAUDEC_WORKSPACE_CONTAINER}/${_f}:ro")
+    done
+    unset _folders _f _empty_dir
+fi
+
 # ── Run ───────────────────────────────────────────────────────────────────────
 CONTAINER_ARGS=(
     --rm -it
@@ -38,6 +52,7 @@ CONTAINER_ARGS=(
     -v "${CLAUDEC_PROFILE_DIR}/home:/home/claude"
     -v "${CLAUDEC_WORKSPACE}:${CLAUDEC_WORKSPACE_CONTAINER}"
     -w "${CLAUDEC_WORKSPACE_CONTAINER}"
+    "${CLAUDEC_EXCLUDE_MOUNTS[@]+"${CLAUDEC_EXCLUDE_MOUNTS[@]}"}"
     ${CLAUDEC_CONTAINER_FLAGS:-}
 )
 
