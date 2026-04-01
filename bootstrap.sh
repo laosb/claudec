@@ -56,7 +56,11 @@ fi
 # ── Dispatch ───────────────────────────────────────────────────────────────────
 if [ "${1:-}" = "sh" ]; then
     shift
-    exec /bin/bash "$@"
+    if [ $# -eq 0 ]; then
+        exec /bin/bash
+    else
+        exec /bin/bash -c "$*"
+    fi
 fi
 
 exec claude "$@"
