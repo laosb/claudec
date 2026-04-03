@@ -7,6 +7,7 @@ import Foundation
 /// - Preparing the runtime
 /// - Computing workspace paths and directory layout
 /// - Building container mounts (profile home, workspace, exclude overlays, bootstrap script)
+/// - Migrating legacy workspace mappings when detected
 /// - Configuring and running the container
 /// - Performing necessary cleanups (temp dirs)
 public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
@@ -24,11 +25,22 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
 
     let canonicalWorkspace = resolveSymlinksWithPrivate(config.workspace)
     let workspaceHash = sha256Hex(canonicalWorkspace.path)
-    let workspaceContainerPath = "/workspace/\(workspaceHash)"
+    let folderName = canonicalWorkspace.lastPathComponent
+    let hashSuffix = String(workspaceHash.suffix(10))
+
+    let workspaceContainerPath = "/workspace/\(folderName)-\(hashSuffix)"
+    let legacyContainerPath = "/workspace/\(workspaceHash)"
 
     try FileManager.default.createDirectory(
       at: config.profileHomeDir,
       withIntermediateDirectories: true
+    )
+
+    // Check for legacy workspace mapping and offer migration
+    try WorkspaceMigration.migrateIfNeeded(
+      profileHomeDir: config.profileHomeDir,
+      legacyPath: legacyContainerPath,
+      newPath: workspaceContainerPath
     )
 
     // Build mounts list

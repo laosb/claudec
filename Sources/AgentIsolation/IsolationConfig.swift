@@ -9,7 +9,7 @@ public struct IsolationConfig: Sendable {
   public var profileHomeDir: URL
 
   /// Host workspace directory to mount inside the container.
-  /// Mounted at /workspace/<sha256(canonicalPath)>.
+  /// Mounted at /workspace/<folderName>-<last10 of sha256(canonicalPath)>.
   public var workspace: URL
 
   /// Subfolder names within the workspace to mask with empty read-only mounts.

@@ -139,7 +139,7 @@ struct AgentSessionTests {
     #expect(homeMount?.hostPath == profileDir.path)
   }
 
-  @Test("Mounts workspace at /workspace/<sha256>")
+  @Test("Mounts workspace at /workspace/<name>-<last10sha>")
   func mountsWorkspace() async throws {
     let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
     let wsDir = URL(fileURLWithPath: "/tmp/claudec-test-ws-\(UUID().uuidString)")
@@ -160,7 +160,6 @@ struct AgentSessionTests {
     _ = try await session.run()
 
     let canonicalPath = wsDir.resolvingSymlinksInPath().path
-    // On macOS, /tmp resolves to /private/tmp
     let expectedPath: String
     #if os(macOS)
       if canonicalPath.hasPrefix("/tmp") || canonicalPath.hasPrefix("/var")
@@ -174,7 +173,9 @@ struct AgentSessionTests {
       expectedPath = canonicalPath
     #endif
     let hash = sha256Hex(expectedPath)
-    let expectedContainerPath = "/workspace/\(hash)"
+    let folderName = URL(fileURLWithPath: expectedPath).lastPathComponent
+    let hashSuffix = String(hash.suffix(10))
+    let expectedContainerPath = "/workspace/\(folderName)-\(hashSuffix)"
 
     let mounts = runtime.lastContainerConfiguration!.mounts
     let wsMount = mounts.first { $0.containerPath == expectedContainerPath }
@@ -376,5 +377,152 @@ struct AgentSessionTests {
     var isDir: ObjCBool = false
     #expect(FileManager.default.fileExists(atPath: profileDir.path, isDirectory: &isDir))
     #expect(isDir.boolValue)
+  }
+}
+
+// MARK: - Workspace Migration Tests
+
+@Suite("Workspace Migration")
+struct WorkspaceMigrationTests {
+
+  /// Helper: compute the new workspace container path for a given host directory.
+  private func newWorkspacePath(for hostPath: String) -> String {
+    let url = URL(fileURLWithPath: hostPath)
+    let resolved = url.resolvingSymlinksInPath()
+    let canonical: String
+    #if os(macOS)
+      let parts = resolved.pathComponents
+      if parts.count > 1, parts.first == "/",
+        ["tmp", "var", "etc"].contains(parts[1])
+      {
+        canonical = "/private" + resolved.path
+      } else {
+        canonical = resolved.path
+      }
+    #else
+      canonical = resolved.path
+    #endif
+    let hash = sha256Hex(canonical)
+    let name = URL(fileURLWithPath: canonical).lastPathComponent
+    return "/workspace/\(name)-\(String(hash.suffix(10)))"
+  }
+
+  /// Helper: compute the legacy workspace container path for a given host directory.
+  private func legacyWorkspacePath(for hostPath: String) -> String {
+    let url = URL(fileURLWithPath: hostPath)
+    let resolved = url.resolvingSymlinksInPath()
+    let canonical: String
+    #if os(macOS)
+      let parts = resolved.pathComponents
+      if parts.count > 1, parts.first == "/",
+        ["tmp", "var", "etc"].contains(parts[1])
+      {
+        canonical = "/private" + resolved.path
+      } else {
+        canonical = resolved.path
+      }
+    #else
+      canonical = resolved.path
+    #endif
+    return "/workspace/\(sha256Hex(canonical))"
+  }
+
+  /// Encode a container path to Claude Code's project folder name (same as AgentSession).
+  private func encodeProjectFolderName(_ containerPath: String) -> String {
+    var result = ""
+    for component in containerPath.split(separator: "/", omittingEmptySubsequences: true) {
+      if component.hasPrefix(".") {
+        result += "-" + String(component)
+      } else {
+        result += "-" + component
+      }
+    }
+    return result
+  }
+
+  @Test("No migration when no legacy project folder exists")
+  func noMigrationNeeded() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let base = URL(fileURLWithPath: "/tmp/claudec-mig-\(UUID().uuidString)")
+    let profileDir = base.appendingPathComponent("home")
+    let wsDir = base.appendingPathComponent("ws")
+    try FileManager.default.createDirectory(at: wsDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: profileDir,
+      workspace: wsDir,
+      arguments: ["echo"]
+    )
+    let session = AgentSession(config: config, runtime: runtime)
+    // Should not prompt or throw — no legacy data exists
+    _ = try await session.run()
+
+    // Verify new-format path is used
+    let workDir = runtime.lastContainerConfiguration!.workingDirectory!
+    #expect(workDir.contains("-"))
+    #expect(workDir.hasPrefix("/workspace/"))
+  }
+
+  @Test("Skips migration if new project folder already exists alongside legacy")
+  func skipsIfNewAlreadyExists() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let base = URL(fileURLWithPath: "/tmp/claudec-mig-\(UUID().uuidString)")
+    let profileDir = base.appendingPathComponent("home")
+    let wsDir = base.appendingPathComponent("ws")
+    try FileManager.default.createDirectory(at: wsDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    let legacyPath = legacyWorkspacePath(for: wsDir.path)
+    let newPath = newWorkspacePath(for: wsDir.path)
+
+    let projectsDir = profileDir.appendingPathComponent(".claude/projects")
+    let legacyFolder = projectsDir.appendingPathComponent(encodeProjectFolderName(legacyPath))
+    let newFolder = projectsDir.appendingPathComponent(encodeProjectFolderName(newPath))
+    try FileManager.default.createDirectory(at: legacyFolder, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: newFolder, withIntermediateDirectories: true)
+
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: profileDir,
+      workspace: wsDir,
+      arguments: ["echo"]
+    )
+    let session = AgentSession(config: config, runtime: runtime)
+    // Should not prompt — both exist, so migration is skipped
+    _ = try await session.run()
+
+    // Both dirs should still exist
+    #expect(FileManager.default.fileExists(atPath: legacyFolder.path))
+    #expect(FileManager.default.fileExists(atPath: newFolder.path))
+  }
+
+  @Test("New workspace path format is folderName-last10hash")
+  func newPathFormat() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    let base = URL(fileURLWithPath: "/tmp/claudec-mig-\(UUID().uuidString)")
+    let profileDir = base.appendingPathComponent("home")
+    let wsDir = base.appendingPathComponent("myproject")
+    try FileManager.default.createDirectory(at: wsDir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    let config = IsolationConfig(
+      image: "test:latest",
+      profileHomeDir: profileDir,
+      workspace: wsDir,
+      arguments: ["echo"]
+    )
+    let session = AgentSession(config: config, runtime: runtime)
+    _ = try await session.run()
+
+    let workDir = runtime.lastContainerConfiguration!.workingDirectory!
+    // Should start with /workspace/myproject-
+    #expect(workDir.hasPrefix("/workspace/myproject-"))
+    // The suffix should be exactly 10 hex chars
+    let parts = workDir.split(separator: "-")
+    let hashPart = String(parts.last!)
+    #expect(hashPart.count == 10)
+    #expect(hashPart.allSatisfy { $0.isHexDigit })
   }
 }

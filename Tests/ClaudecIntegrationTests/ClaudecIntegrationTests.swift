@@ -68,6 +68,15 @@ private func sha256Hex(_ string: String) -> String {
   return digest.map { String(format: "%02x", $0) }.joined()
 }
 
+/// Compute the new workspace container path for a given workspace URL.
+private func workspaceContainerPath(for ws: URL) -> String {
+  let canonicalPath = ws.resolvingSymlinksInPath().path
+  let resolvedPath = canonicalPath.hasPrefix("/tmp") ? "/private" + canonicalPath : canonicalPath
+  let hash = sha256Hex(resolvedPath)
+  let folderName = URL(fileURLWithPath: resolvedPath).lastPathComponent
+  return "/workspace/\(folderName)-\(String(hash.suffix(10)))"
+}
+
 // MARK: - Stub Helper
 
 /// Creates minimal stubs inside a profile home dir so bootstrap skips heavy installations.
@@ -203,9 +212,7 @@ struct ClaudecIntegrationTests {
       atomically: true, encoding: .utf8)
     defer { try? FileManager.default.removeItem(at: ws) }
 
-    let canonicalPath = ws.resolvingSymlinksInPath().path
-    let resolvedPath = canonicalPath.hasPrefix("/tmp") ? "/private" + canonicalPath : canonicalPath
-    let hash = sha256Hex(resolvedPath)
+    let containerPath = workspaceContainerPath(for: ws)
 
     let result = await runClaudec(
       env: [
@@ -213,7 +220,7 @@ struct ClaudecIntegrationTests {
         "CLAUDEC_WORKSPACE": ws.path,
         "CLAUDEC_BOOTSTRAP_SCRIPT": bootstrapScriptPath,
       ],
-      arguments: ["sh", "cat", "/workspace/\(hash)/probe.txt"]
+      arguments: ["sh", "cat", "\(containerPath)/probe.txt"]
     )
     #expect(result.exitCode == 0)
     #expect(result.output.contains("workspace_content"))
@@ -225,9 +232,7 @@ struct ClaudecIntegrationTests {
     try FileManager.default.createDirectory(at: ws, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: ws) }
 
-    let canonicalPath = ws.resolvingSymlinksInPath().path
-    let resolvedPath = canonicalPath.hasPrefix("/tmp") ? "/private" + canonicalPath : canonicalPath
-    let hash = sha256Hex(resolvedPath)
+    let containerPath = workspaceContainerPath(for: ws)
 
     let result = await runClaudec(
       env: [
@@ -238,7 +243,7 @@ struct ClaudecIntegrationTests {
       arguments: ["sh", "pwd"]
     )
     #expect(result.exitCode == 0)
-    #expect(result.output.contains("/workspace/\(hash)"))
+    #expect(result.output.contains(containerPath))
   }
 
   @Test("CLAUDEC_EXCLUDE_FOLDERS hides sub-folder contents")
@@ -251,9 +256,7 @@ struct ClaudecIntegrationTests {
       atomically: true, encoding: .utf8)
     defer { try? FileManager.default.removeItem(at: ws) }
 
-    let canonicalPath = ws.resolvingSymlinksInPath().path
-    let resolvedPath = canonicalPath.hasPrefix("/tmp") ? "/private" + canonicalPath : canonicalPath
-    let hash = sha256Hex(resolvedPath)
+    let containerPath = workspaceContainerPath(for: ws)
 
     let result = await runClaudec(
       env: [
@@ -262,7 +265,7 @@ struct ClaudecIntegrationTests {
         "CLAUDEC_EXCLUDE_FOLDERS": "secret",
         "CLAUDEC_BOOTSTRAP_SCRIPT": bootstrapScriptPath,
       ],
-      arguments: ["sh", "ls", "/workspace/\(hash)/secret"]
+      arguments: ["sh", "ls", "\(containerPath)/secret"]
     )
     #expect(result.exitCode == 0)
     #expect(result.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -280,9 +283,7 @@ struct ClaudecIntegrationTests {
     }
     defer { try? FileManager.default.removeItem(at: ws) }
 
-    let canonicalPath = ws.resolvingSymlinksInPath().path
-    let resolvedPath = canonicalPath.hasPrefix("/tmp") ? "/private" + canonicalPath : canonicalPath
-    let hash = sha256Hex(resolvedPath)
+    let containerPath = workspaceContainerPath(for: ws)
 
     let resultA = await runClaudec(
       env: [
@@ -291,7 +292,7 @@ struct ClaudecIntegrationTests {
         "CLAUDEC_EXCLUDE_FOLDERS": "folderA,folderB",
         "CLAUDEC_BOOTSTRAP_SCRIPT": bootstrapScriptPath,
       ],
-      arguments: ["sh", "ls", "/workspace/\(hash)/folderA"]
+      arguments: ["sh", "ls", "\(containerPath)/folderA"]
     )
     let resultB = await runClaudec(
       env: [
@@ -300,7 +301,7 @@ struct ClaudecIntegrationTests {
         "CLAUDEC_EXCLUDE_FOLDERS": "folderA,folderB",
         "CLAUDEC_BOOTSTRAP_SCRIPT": bootstrapScriptPath,
       ],
-      arguments: ["sh", "ls", "/workspace/\(hash)/folderB"]
+      arguments: ["sh", "ls", "\(containerPath)/folderB"]
     )
 
     #expect(resultA.exitCode == 0)
