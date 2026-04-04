@@ -96,6 +96,203 @@
     }
   }
 
+  // MARK: - DockerAPIClient URL Construction Tests
+
+  @Suite("DockerAPIClient URL Construction")
+  struct DockerAPIClientURLTests {
+
+    // MARK: - parseImageRef
+
+    @Test("parseImageRef splits simple image:tag")
+    func parseSimpleRef() {
+      let (image, tag) = DockerAPIClient.parseImageRef("nginx:latest")
+      #expect(image == "nginx")
+      #expect(tag == "latest")
+    }
+
+    @Test("parseImageRef defaults to 'latest' when no tag")
+    func parseNoTag() {
+      let (image, tag) = DockerAPIClient.parseImageRef("ubuntu")
+      #expect(image == "ubuntu")
+      #expect(tag == "latest")
+    }
+
+    @Test("parseImageRef handles registry with port and tag")
+    func parseRegistryPortAndTag() {
+      let (image, tag) = DockerAPIClient.parseImageRef("myhost:5000/myimage:v2")
+      #expect(image == "myhost:5000/myimage")
+      #expect(tag == "v2")
+    }
+
+    @Test("parseImageRef handles registry with port but no tag")
+    func parseRegistryPortNoTag() {
+      let (image, tag) = DockerAPIClient.parseImageRef("myhost:5000/myimage")
+      #expect(image == "myhost:5000/myimage")
+      #expect(tag == "latest")
+    }
+
+    @Test("parseImageRef handles fully qualified ghcr.io ref")
+    func parseGHCR() {
+      let (image, tag) = DockerAPIClient.parseImageRef("ghcr.io/user/repo:sha-abc123")
+      #expect(image == "ghcr.io/user/repo")
+      #expect(tag == "sha-abc123")
+    }
+
+    @Test("parseImageRef handles numeric tag like ubuntu:22.04")
+    func parseNumericTag() {
+      let (image, tag) = DockerAPIClient.parseImageRef("ubuntu:22.04")
+      #expect(image == "ubuntu")
+      #expect(tag == "22.04")
+    }
+
+    @Test("parseImageRef handles sha256 digest reference with @")
+    func parseDigestRef() {
+      // Docker digest refs use '@' separator, but parseImageRef is designed
+      // for ':' tag syntax. With @sha256:..., the last ':' splits it.
+      // This is expected — digest refs should be used as-is, not parsed for tags.
+      let ref = "ubuntu@sha256:abcdef1234567890"
+      let (image, tag) = DockerAPIClient.parseImageRef(ref)
+      #expect(image == "ubuntu@sha256")
+      #expect(tag == "abcdef1234567890")
+    }
+
+    @Test("parseImageRef handles empty string")
+    func parseEmptyRef() {
+      let (image, tag) = DockerAPIClient.parseImageRef("")
+      #expect(image == "")
+      #expect(tag == "latest")
+    }
+
+    // MARK: - pathEncodeComponent
+
+    @Test("pathEncodeComponent encodes slashes in image refs")
+    func pathEncodeSlashes() {
+      let encoded = DockerAPIClient.pathEncodeComponent("library/nginx")
+      #expect(encoded == "library%2Fnginx")
+    }
+
+    @Test("pathEncodeComponent encodes special characters")
+    func pathEncodeSpecial() {
+      let encoded = DockerAPIClient.pathEncodeComponent("image name:tag")
+      #expect(encoded.contains("%20") || encoded.contains("+"))
+      #expect(!encoded.contains(" "))
+    }
+
+    @Test("pathEncodeComponent preserves safe characters")
+    func pathEncodeSafe() {
+      let encoded = DockerAPIClient.pathEncodeComponent("alpine")
+      #expect(encoded == "alpine")
+    }
+
+    @Test("pathEncodeComponent handles colons in digest refs")
+    func pathEncodeDigest() {
+      // Colons are allowed in URL path segments per RFC 3986, so they are NOT encoded
+      let encoded = DockerAPIClient.pathEncodeComponent("sha256:abc123")
+      #expect(encoded == "sha256:abc123")
+    }
+
+    // MARK: - buildURL with Unix socket
+
+    @Test("buildURL produces correct path for Unix socket endpoint")
+    func buildURLUnixSocket() async throws {
+      let client = DockerAPIClient(endpoint: "/var/run/docker.sock")
+      defer { Task { try? await client.shutdown() } }
+
+      let url = client.buildURL(path: "/_ping")
+      #expect(url.hasPrefix("http+unix://"))
+      #expect(url.contains("%2Fvar%2Frun%2Fdocker.sock"))
+      #expect(url.hasSuffix("/v1.44/_ping"))
+    }
+
+    @Test("buildURL includes query items properly encoded")
+    func buildURLWithQuery() async throws {
+      let client = DockerAPIClient(endpoint: "/var/run/docker.sock")
+      defer { Task { try? await client.shutdown() } }
+
+      let url = client.buildURL(
+        path: "/images/create",
+        queryItems: [
+          URLQueryItem(name: "fromImage", value: "ghcr.io/user/repo"),
+          URLQueryItem(name: "tag", value: "v1.0"),
+        ])
+      #expect(url.contains("/v1.44/images/create?"))
+      #expect(url.contains("fromImage=ghcr.io/user/repo") || url.contains("fromImage=ghcr.io%2Fuser%2Frepo"))
+      #expect(url.contains("tag=v1.0"))
+    }
+
+    @Test("buildURL with platform JSON query encodes braces")
+    func buildURLWithPlatformJSON() async throws {
+      let client = DockerAPIClient(endpoint: "/var/run/docker.sock")
+      defer { Task { try? await client.shutdown() } }
+
+      let platformJSON = #"{"os":"linux","architecture":"arm64"}"#
+      let url = client.buildURL(
+        path: "/images/create",
+        queryItems: [
+          URLQueryItem(name: "fromImage", value: "alpine"),
+          URLQueryItem(name: "tag", value: "latest"),
+          URLQueryItem(name: "platform", value: platformJSON),
+        ])
+      // URLQueryItem should encode the JSON properly
+      #expect(url.contains("platform="))
+      // The raw braces and colons should be percent-encoded in query
+      #expect(!url.contains("platform={"))
+    }
+
+    @Test("buildURL with no query items omits question mark")
+    func buildURLNoQuery() async throws {
+      let client = DockerAPIClient(endpoint: "/var/run/docker.sock")
+      defer { Task { try? await client.shutdown() } }
+
+      let url = client.buildURL(path: "/containers/abc123/start")
+      #expect(!url.contains("?"))
+      #expect(url.hasSuffix("/v1.44/containers/abc123/start"))
+    }
+
+    // MARK: - buildURL with TCP endpoint
+
+    @Test("buildURL produces correct URL for TCP endpoint")
+    func buildURLTCP() async throws {
+      let client = DockerAPIClient(endpoint: "http://localhost:2375")
+      defer { Task { try? await client.shutdown() } }
+
+      let url = client.buildURL(path: "/_ping")
+      #expect(url == "http://localhost:2375/v1.44/_ping")
+    }
+
+    @Test("buildURL for TCP endpoint without scheme adds http")
+    func buildURLTCPNoScheme() async throws {
+      let client = DockerAPIClient(endpoint: "localhost:2375")
+      defer { Task { try? await client.shutdown() } }
+
+      let url = client.buildURL(path: "/_ping")
+      #expect(url.hasPrefix("http://"))
+      #expect(url.hasSuffix("/v1.44/_ping"))
+    }
+
+    @Test("buildURL strips trailing slash from TCP endpoint")
+    func buildURLTCPTrailingSlash() async throws {
+      let client = DockerAPIClient(endpoint: "http://myhost:2375/")
+      defer { Task { try? await client.shutdown() } }
+
+      let url = client.buildURL(path: "/_ping")
+      #expect(url == "http://myhost:2375/v1.44/_ping")
+    }
+
+    // MARK: - Unix socket with unix:// prefix
+
+    @Test("buildURL handles unix:// prefix in endpoint")
+    func buildURLUnixPrefix() async throws {
+      let client = DockerAPIClient(endpoint: "unix:///var/run/docker.sock")
+      defer { Task { try? await client.shutdown() } }
+
+      let url = client.buildURL(path: "/_ping")
+      #expect(url.hasPrefix("http+unix://"))
+      #expect(url.contains("%2Fvar%2Frun%2Fdocker.sock"))
+      #expect(url.hasSuffix("/v1.44/_ping"))
+    }
+  }
+
   // MARK: - DockerRuntime Integration Tests
 
   private func isDockerAvailable() -> Bool {

@@ -8,8 +8,14 @@ import NIOFoundationCompat
 /// Supports Unix domain socket and TCP connections.
 final class DockerAPIClient: Sendable {
   private let httpClient: HTTPClient
-  let apiBase: String
+  /// Whether connected via Unix socket (requires explicit Host header).
+  private let isUnixSocket: Bool
+  /// Scheme + authority portion, e.g. `http+unix://%2Fvar%2Frun%2Fdocker.sock` or `http://localhost:2375`.
+  private let baseAuthority: String
   let endpoint: String
+
+  /// Base path prefix for all API calls.
+  static let apiVersion = "/v1.44"
 
   init(endpoint: String) {
     self.endpoint = endpoint
@@ -19,10 +25,18 @@ final class DockerAPIClient: Sendable {
       let encoded =
         path.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)?
         .replacingOccurrences(of: "/", with: "%2F") ?? path
-      self.apiBase = "http+unix://\(encoded)/v1.44"
+      self.baseAuthority = "http+unix://\(encoded)"
+      self.isUnixSocket = true
     } else {
-      let base = endpoint.hasSuffix("/") ? String(endpoint.dropLast()) : endpoint
-      self.apiBase = "\(base)/v1.44"
+      var base = endpoint
+      // Ensure scheme is present
+      if !base.contains("://") {
+        base = "http://\(base)"
+      }
+      // Strip trailing slash
+      if base.hasSuffix("/") { base = String(base.dropLast()) }
+      self.baseAuthority = base
+      self.isUnixSocket = false
     }
 
     self.httpClient = HTTPClient(eventLoopGroupProvider: .singleton)
@@ -32,10 +46,37 @@ final class DockerAPIClient: Sendable {
     try await httpClient.shutdown()
   }
 
+  // MARK: - Request Builder
+
+  /// Build a full URL from a path and optional query items using URLComponents.
+  func buildURL(path: String, queryItems: [URLQueryItem]? = nil) -> String {
+    var components = URLComponents()
+    components.path = Self.apiVersion + path
+    if let items = queryItems, !items.isEmpty {
+      components.queryItems = items
+    }
+    // URLComponents.string produces path?query (no scheme/host), which we prepend to baseAuthority.
+    // percentEncodedQuery is used by URLComponents automatically.
+    let pathAndQuery = components.string ?? (Self.apiVersion + path)
+    return "\(baseAuthority)\(pathAndQuery)"
+  }
+
+  /// Create an HTTPClientRequest with the correct Host header for Unix sockets.
+  private func makeRequest(url: String) -> HTTPClientRequest {
+    var request = HTTPClientRequest(url: url)
+    if isUnixSocket {
+      // Docker Engine on Linux strictly requires Host header per HTTP/1.1.
+      // AsyncHTTPClient derives Host from the URL authority, which for
+      // http+unix:// is the percent-encoded socket path — not a valid hostname.
+      request.headers.replaceOrAdd(name: "Host", value: "localhost")
+    }
+    return request
+  }
+
   // MARK: - Ping
 
   func ping() async throws {
-    var request = HTTPClientRequest(url: "\(apiBase)/_ping")
+    var request = makeRequest(url: buildURL(path: "/_ping"))
     request.method = .GET
     let response = try await httpClient.execute(request, timeout: .seconds(10))
     guard response.status == .ok else {
@@ -49,16 +90,18 @@ final class DockerAPIClient: Sendable {
   // MARK: - Image Operations
 
   func pullImage(ref: String, platform: String? = nil) async throws {
-    let (image, tag) = parseImageRef(ref)
-    let encodedImage = image.urlQueryEncoded
-    let encodedTag = tag.urlQueryEncoded
+    let (image, tag) = Self.parseImageRef(ref)
 
-    var url = "\(apiBase)/images/create?fromImage=\(encodedImage)&tag=\(encodedTag)"
+    var queryItems = [
+      URLQueryItem(name: "fromImage", value: image),
+      URLQueryItem(name: "tag", value: tag),
+    ]
     if let platform = platform {
-      url += "&platform=\(platform.urlQueryEncoded)"
+      queryItems.append(URLQueryItem(name: "platform", value: platform))
     }
 
-    var request = HTTPClientRequest(url: url)
+    var request = makeRequest(
+      url: buildURL(path: "/images/create", queryItems: queryItems))
     request.method = .POST
 
     let response = try await httpClient.execute(request, timeout: .seconds(600))
@@ -83,13 +126,13 @@ final class DockerAPIClient: Sendable {
   }
 
   func inspectImage(ref: String) async throws -> DockerImageInspect? {
-    let encodedRef = ref.urlPathEncoded
-    var request = HTTPClientRequest(url: "\(apiBase)/images/\(encodedRef)/json")
+    let encodedRef = Self.pathEncodeComponent(ref)
+    var request = makeRequest(
+      url: buildURL(path: "/images/\(encodedRef)/json"))
     request.method = .GET
 
     let response = try await httpClient.execute(request, timeout: .seconds(30))
     if response.status == .notFound {
-      // Consume body to avoid connection leak
       for try await _ in response.body {}
       return nil
     }
@@ -104,13 +147,13 @@ final class DockerAPIClient: Sendable {
   }
 
   func removeImage(nameOrDigest: String, force: Bool = false) async throws {
-    let encoded = nameOrDigest.urlPathEncoded
-    var request = HTTPClientRequest(
-      url: "\(apiBase)/images/\(encoded)?force=\(force)")
+    let encoded = Self.pathEncodeComponent(nameOrDigest)
+    let queryItems = [URLQueryItem(name: "force", value: String(force))]
+    var request = makeRequest(
+      url: buildURL(path: "/images/\(encoded)", queryItems: queryItems))
     request.method = .DELETE
 
     let response = try await httpClient.execute(request, timeout: .seconds(30))
-    // Consume body
     for try await _ in response.body {}
     guard response.status == .ok else {
       if response.status == .notFound { return }
@@ -122,7 +165,8 @@ final class DockerAPIClient: Sendable {
   // MARK: - Container Operations
 
   func createContainer(config: DockerCreateContainerRequest) async throws -> String {
-    var request = HTTPClientRequest(url: "\(apiBase)/containers/create")
+    var request = makeRequest(
+      url: buildURL(path: "/containers/create"))
     request.method = .POST
     request.headers.add(name: "Content-Type", value: "application/json")
 
@@ -143,7 +187,8 @@ final class DockerAPIClient: Sendable {
   }
 
   func startContainer(id: String) async throws {
-    var request = HTTPClientRequest(url: "\(apiBase)/containers/\(id)/start")
+    var request = makeRequest(
+      url: buildURL(path: "/containers/\(id)/start"))
     request.method = .POST
 
     let response = try await httpClient.execute(request, timeout: .seconds(30))
@@ -155,7 +200,8 @@ final class DockerAPIClient: Sendable {
   }
 
   func waitContainer(id: String) async throws -> Int64 {
-    var request = HTTPClientRequest(url: "\(apiBase)/containers/\(id)/wait")
+    var request = makeRequest(
+      url: buildURL(path: "/containers/\(id)/wait"))
     request.method = .POST
 
     let response = try await httpClient.execute(request, timeout: .hours(24))
@@ -172,8 +218,9 @@ final class DockerAPIClient: Sendable {
   }
 
   func stopContainer(id: String, timeout: Int = 10) async throws {
-    var request = HTTPClientRequest(
-      url: "\(apiBase)/containers/\(id)/stop?t=\(timeout)")
+    let queryItems = [URLQueryItem(name: "t", value: String(timeout))]
+    var request = makeRequest(
+      url: buildURL(path: "/containers/\(id)/stop", queryItems: queryItems))
     request.method = .POST
 
     let response = try await httpClient.execute(request, timeout: .seconds(Int64(timeout + 30)))
@@ -189,8 +236,12 @@ final class DockerAPIClient: Sendable {
   }
 
   func removeContainer(id: String, force: Bool = true) async throws {
-    var request = HTTPClientRequest(
-      url: "\(apiBase)/containers/\(id)?force=\(force)&v=true")
+    let queryItems = [
+      URLQueryItem(name: "force", value: String(force)),
+      URLQueryItem(name: "v", value: "true"),
+    ]
+    var request = makeRequest(
+      url: buildURL(path: "/containers/\(id)", queryItems: queryItems))
     request.method = .DELETE
 
     let response = try await httpClient.execute(request, timeout: .seconds(30))
@@ -202,8 +253,12 @@ final class DockerAPIClient: Sendable {
   }
 
   func resizeContainerTTY(id: String, width: Int, height: Int) async throws {
-    var request = HTTPClientRequest(
-      url: "\(apiBase)/containers/\(id)/resize?w=\(width)&h=\(height)")
+    let queryItems = [
+      URLQueryItem(name: "w", value: String(width)),
+      URLQueryItem(name: "h", value: String(height)),
+    ]
+    var request = makeRequest(
+      url: buildURL(path: "/containers/\(id)/resize", queryItems: queryItems))
     request.method = .POST
 
     let response = try await httpClient.execute(request, timeout: .seconds(10))
@@ -212,8 +267,10 @@ final class DockerAPIClient: Sendable {
 
   // MARK: - Helpers
 
-  private func parseImageRef(_ ref: String) -> (image: String, tag: String) {
-    // Handle refs like "ghcr.io/user/repo:tag" or "ubuntu:22.04" or "ubuntu"
+  /// Parse a Docker image reference into (image, tag).
+  ///
+  /// Handles refs like `ghcr.io/user/repo:tag`, `ubuntu:22.04`, or `ubuntu` (defaults to `latest`).
+  static func parseImageRef(_ ref: String) -> (image: String, tag: String) {
     // The tag separator is the last `:` that isn't part of a port number
     if let lastColon = ref.lastIndex(of: ":") {
       let afterColon = ref[ref.index(after: lastColon)...]
@@ -224,20 +281,14 @@ final class DockerAPIClient: Sendable {
     }
     return (ref, "latest")
   }
-}
 
-// MARK: - URL Encoding Helpers
-
-extension String {
-  /// Percent-encode for use in URL query parameter values.
-  var urlQueryEncoded: String {
-    addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? self
-  }
-
-  /// Percent-encode for use in URL path segments (encodes `/`).
-  var urlPathEncoded: String {
-    addingPercentEncoding(withAllowedCharacters: .urlPathAllowed)?
-      .replacingOccurrences(of: "/", with: "%2F") ?? self
+  /// Percent-encode a string for use as a URL path component.
+  /// Encodes everything except unreserved characters (RFC 3986 section 2.3).
+  static func pathEncodeComponent(_ value: String) -> String {
+    // .urlPathAllowed includes '/' which we must also encode for Docker image refs
+    var allowed = CharacterSet.urlPathAllowed
+    allowed.remove("/")
+    return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
   }
 }
 
