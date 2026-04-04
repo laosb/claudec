@@ -16,7 +16,9 @@ import Synchronization
 #endif
 
 /// Mutable state protected by a Mutex inside `DockerStreamAttach`.
-private struct AttachState: ~Copyable {
+/// Marked @unchecked Sendable because DispatchSource predates Swift concurrency;
+/// all access is serialized through the enclosing Mutex.
+private struct AttachState: ~Copyable, @unchecked Sendable {
   var readSource: DispatchSourceRead?
   var writeSource: DispatchSourceRead?
   var demuxBuffer = Data()

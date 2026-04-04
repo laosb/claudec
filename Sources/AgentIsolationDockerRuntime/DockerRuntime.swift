@@ -201,7 +201,12 @@ public final class DockerContainer: ContainerRuntimeContainer, Sendable {
   let terminalState: DockerTerminalState?
   let useTTY: Bool
 
-  private let _sigwinchSource = Mutex<DispatchSourceSignal?>(nil)
+  /// Wrapper to satisfy Mutex's Sendable overload for DispatchSource.
+  private struct SigwinchState: @unchecked Sendable {
+    var source: DispatchSourceSignal?
+  }
+
+  private let _sigwinchSource = Mutex(SigwinchState())
 
   init(
     id: String,
@@ -227,9 +232,9 @@ public final class DockerContainer: ContainerRuntimeContainer, Sendable {
   }
 
   public func stop() async throws {
-    _sigwinchSource.withLock { source in
-      source?.cancel()
-      source = nil
+    _sigwinchSource.withLock { state in
+      state.source?.cancel()
+      state.source = nil
     }
     terminalState?.restore()
     attachConnection?.stop()
@@ -248,7 +253,7 @@ public final class DockerContainer: ContainerRuntimeContainer, Sendable {
         }
       }
       source.resume()
-      self._sigwinchSource.withLock { $0 = source }
+      self._sigwinchSource.withLock { $0.source = source }
     #endif
   }
 }
