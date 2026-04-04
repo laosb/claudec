@@ -46,13 +46,17 @@ final class DockerAPIClient: Sendable {
 
   // MARK: - Image Operations
 
-  func pullImage(ref: String) async throws {
+  func pullImage(ref: String, platform: String? = nil) async throws {
     let (image, tag) = parseImageRef(ref)
     let encodedImage = image.urlQueryEncoded
     let encodedTag = tag.urlQueryEncoded
 
-    var request = HTTPClientRequest(
-      url: "\(apiBase)/images/create?fromImage=\(encodedImage)&tag=\(encodedTag)")
+    var url = "\(apiBase)/images/create?fromImage=\(encodedImage)&tag=\(encodedTag)"
+    if let platform = platform {
+      url += "&platform=\(platform.urlQueryEncoded)"
+    }
+
+    var request = HTTPClientRequest(url: url)
     request.method = .POST
 
     let response = try await httpClient.execute(request, timeout: .seconds(600))

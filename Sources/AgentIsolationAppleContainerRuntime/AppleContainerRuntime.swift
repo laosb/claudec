@@ -1,6 +1,7 @@
 import AgentIsolation
 import Containerization
 import ContainerizationArchive
+import ContainerizationOCI
 import ContainerizationOS
 import Foundation
 import Logging
@@ -58,7 +59,7 @@ public final class AppleContainerRuntime: ContainerRuntime, @unchecked Sendable 
       throw AppleContainerRuntimeError.notPrepared
     }
     do {
-      let image = try await store.pull(reference: ref)
+      let image = try await store.pull(reference: ref, platform: .current)
       return AppleContainerImage(ref: ref, digest: image.digest)
     } catch {
       // Pull failure — image may not exist or network error

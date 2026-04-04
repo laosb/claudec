@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM --platform=linux/arm64 debian:latest
+FROM debian:latest
 
 # Install base system dependencies (including Swift runtime deps)
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -39,11 +39,11 @@ RUN curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
 # Install pnpm 10 globally
 RUN npm install -g pnpm@10
 
-# Install Docker CLI
+# Install Docker CLI (use dpkg arch to support both amd64 and arm64)
 RUN install -m 0755 -d /etc/apt/keyrings \
     && curl -fsSL https://download.docker.com/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
     && chmod a+r /etc/apt/keyrings/docker.asc \
-    && echo "deb [arch=arm64 signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
+    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/debian \
        $(. /etc/os-release && echo "$VERSION_CODENAME") stable" \
        | tee /etc/apt/sources.list.d/docker.list > /dev/null \
     && apt-get update \
