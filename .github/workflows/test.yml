@@ -7,10 +7,27 @@ on:
 
 jobs:
   unit-tests:
-    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-26
+            arch: arm64
+            traits: ContainerRuntimeAppleContainer,ContainerRuntimeDocker
+          - os: macos-26-intel
+            arch: x64
+            traits: ContainerRuntimeAppleContainer,ContainerRuntimeDocker
+          - os: ubuntu-24.04
+            arch: x64
+            traits: ContainerRuntimeDocker
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            traits: ContainerRuntimeDocker
+
+    runs-on: ${{ matrix.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Swift
         uses: SwiftyLab/setup-swift@latest
@@ -18,7 +35,7 @@ jobs:
           swift-version: "6.3"
 
       - name: Run unit tests
-        run: swift test --filter AgentIsolationTests
+        run: swift test --traits "${{ matrix.traits }}" --filter 'AgentIsolationTests|AgentIsolationDockerRuntimeTests'
 
   integration-tests:
     runs-on: macos-26
