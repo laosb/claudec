@@ -70,6 +70,7 @@ Each workspace is mounted at a deterministic path inside the container derived f
 | `CLAUDEC_IMAGE` | `ghcr.io/laosb/claudec:latest` | Container image reference. |
 | `CLAUDEC_WORKSPACE` | `$PWD` | Host directory mounted as the workspace. |
 | `CLAUDEC_IMAGE_AUTO_UPDATE` | `1` | Set `0` to skip pulling latest image before each run. |
+| `CLAUDEC_IMAGE_AUTO_UPDATE_REMOVE_OLD` | `1` | Set `0` to keep old image after auto-update pulls a newer one. |
 | `CLAUDEC_EXCLUDE_FOLDERS` | *(empty)* | Comma-separated workspace sub-folders to mask with empty read-only overlays (e.g. `node_modules,.git`). |
 | `CLAUDEC_BOOTSTRAP_SCRIPT` | *(empty)* | Path to a custom entrypoint script, replacing the image default. |
 

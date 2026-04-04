@@ -77,12 +77,16 @@ struct ClaudecCommand: AsyncParsableCommand {
 
     // ── Auto-update image ──────────────────────────────────────────────
     let autoUpdate = env["CLAUDEC_IMAGE_AUTO_UPDATE"].map { $0 != "0" } ?? true
+    let removeOldImage = env["CLAUDEC_IMAGE_AUTO_UPDATE_REMOVE_OLD"].map { $0 != "0" } ?? true
     if autoUpdate {
       try await runtime.prepare()
       let oldImage = try? await runtime.inspectImage(ref: image)
       let newImage = try? await runtime.pullImage(ref: image)
       if let old = oldImage, let new = newImage, old.digest != new.digest {
         print("claudec: loaded newer image for \(image)")
+        if removeOldImage {
+          try? await runtime.removeImage(digest: old.digest)
+        }
       }
     }
 

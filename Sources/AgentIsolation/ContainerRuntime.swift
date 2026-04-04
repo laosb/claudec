@@ -36,6 +36,16 @@ public protocol ContainerRuntime: Sendable {
   /// Returns `nil` when the image does not exist locally.
   func inspectImage(ref: String) async throws -> Image?
 
+  /// Remove an image by its reference.
+  ///
+  /// The image store should always be purged before return.
+  func removeImage(ref: String) async throws
+
+  /// Remove an image by its digest.
+  ///
+  /// The image store should always be purged before return.
+  func removeImage(digest: String) async throws
+
   /// Run a container with specified `imageRef` and container configuration.
   func runContainer(
     imageRef: String,

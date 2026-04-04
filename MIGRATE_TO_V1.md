@@ -14,9 +14,8 @@ claudec has been rewritten from a shell script to a native Swift CLI. This docum
 |---|---|
 | `CLAUDEC_CONTAINER_FLAGS` | No longer applicable — this Swift version calls `apple/containerization` library instead of invoking `container` CLI |
 | `CLAUDEC_CHECK_UPDATE` | It's temporary removed because update by git pulling is not going to work unless you build it yourself |
-| `CLAUDEC_IMAGE_AUTO_UPDATE_REMOVE_OLD` | Old images are now managed by the container runtime automatically. |
 
-All other environment variables (`CLAUDEC_PROFILE`, `CLAUDEC_PROFILE_DIR`, `CLAUDEC_IMAGE`, `CLAUDEC_WORKSPACE`, `CLAUDEC_IMAGE_AUTO_UPDATE`, `CLAUDEC_EXCLUDE_FOLDERS`, `CLAUDEC_BOOTSTRAP_SCRIPT`) work the same as before.
+All other environment variables (`CLAUDEC_PROFILE`, `CLAUDEC_PROFILE_DIR`, `CLAUDEC_IMAGE`, `CLAUDEC_WORKSPACE`, `CLAUDEC_IMAGE_AUTO_UPDATE`, `CLAUDEC_IMAGE_AUTO_UPDATE_REMOVE_OLD`, `CLAUDEC_EXCLUDE_FOLDERS`, `CLAUDEC_BOOTSTRAP_SCRIPT`) work the same as before.
 
 ## Behavioral changes
 

@@ -78,6 +78,20 @@ public final class AppleContainerRuntime: ContainerRuntime, @unchecked Sendable 
     }
   }
 
+  public func removeImage(ref: String) async throws {
+    guard let store = imageStore else {
+      throw AppleContainerRuntimeError.notPrepared
+    }
+    try await store.delete(reference: ref, performCleanup: true)
+  }
+
+  public func removeImage(digest: String) async throws {
+    guard let store = imageStore else {
+      throw AppleContainerRuntimeError.notPrepared
+    }
+    try await store.delete(reference: digest, performCleanup: true)
+  }
+
   public func runContainer(
     imageRef: String,
     configuration: ContainerConfiguration

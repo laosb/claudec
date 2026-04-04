@@ -15,6 +15,8 @@ final class MockRuntime: ContainerRuntime, @unchecked Sendable {
   var lastContainerConfiguration: ContainerConfiguration?
   var lastImageRef: String?
   var containerExitCode: Int32 = 0
+  var removedImageRefs: [String] = []
+  var removedImageDigests: [String] = []
 
   required init(config: ContainerRuntimeConfiguration) {}
 
@@ -28,6 +30,14 @@ final class MockRuntime: ContainerRuntime, @unchecked Sendable {
 
   func inspectImage(ref: String) async throws -> MockImage? {
     MockImage(ref: ref, digest: "sha256:mock")
+  }
+
+  func removeImage(ref: String) async throws {
+    removedImageRefs.append(ref)
+  }
+
+  func removeImage(digest: String) async throws {
+    removedImageDigests.append(digest)
   }
 
   func runContainer(
