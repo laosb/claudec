@@ -7,13 +7,34 @@ on:
 
 jobs:
   build:
-    runs-on: macos-26
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-26
+            arch: arm64
+            runtimes: apple-container,docker
+            artifact: claudec-arm64-macos
+          - os: macos-26-intel
+            arch: x64
+            runtimes: apple-container,docker
+            artifact: claudec-x64-macos
+          - os: ubuntu-24.04
+            arch: x64
+            runtimes: docker
+            artifact: claudec-x64-linux
+          - os: ubuntu-24.04-arm
+            arch: arm64
+            runtimes: docker
+            artifact: claudec-arm64-linux
+
+    runs-on: ${{ matrix.os }}
     permissions:
       contents: write
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Swift
         uses: SwiftyLab/setup-swift@latest
@@ -21,29 +42,36 @@ jobs:
           swift-version: "6.3"
 
       - name: Build release binary
-        run: swift build -c release
-
-      - name: Sign binary
-        run: |
-          codesign --sign - \
-            --entitlements signing/claudec.entitlements \
-            --force .build/release/claudec
+        run: bash build.sh --runtimes "${{ matrix.runtimes }}"
 
       - name: Package binary
         run: |
           cd .build/release
-          tar czf claudec-arm64-macos.tar.gz claudec
-          mv claudec-arm64-macos.tar.gz "$GITHUB_WORKSPACE/"
+          tar czf "${{ matrix.artifact }}.tar.gz" claudec
+          mv "${{ matrix.artifact }}.tar.gz" "$GITHUB_WORKSPACE/"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: claudec-arm64-macos
-          path: claudec-arm64-macos.tar.gz
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
 
       - name: Create release
         uses: softprops/action-gh-release@v2
         with:
           draft: true
-          files: claudec-arm64-macos.tar.gz
+          files: artifacts/*.tar.gz
           prerelease: ${{ contains(github.ref_name, 'alpha') || contains(github.ref_name, 'beta') }}
