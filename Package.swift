@@ -42,11 +42,11 @@ let package = Package(
       name: "AgentIsolationAppleContainerRuntime",
       dependencies: [
         "AgentIsolation",
-        .product(name: "Containerization", package: "containerization"),
-        .product(name: "ContainerizationOCI", package: "containerization"),
-        .product(name: "ContainerizationOS", package: "containerization"),
-        .product(name: "ContainerizationArchive", package: "containerization"),
-        .product(name: "Logging", package: "swift-log"),
+        .product(name: "Containerization", package: "containerization", condition: .when(platforms: [.macOS])),
+        .product(name: "ContainerizationOCI", package: "containerization", condition: .when(platforms: [.macOS])),
+        .product(name: "ContainerizationOS", package: "containerization", condition: .when(platforms: [.macOS])),
+        .product(name: "ContainerizationArchive", package: "containerization", condition: .when(platforms: [.macOS])),
+        .product(name: "Logging", package: "swift-log", condition: .when(platforms: [.macOS])),
       ]
     ),
     .target(

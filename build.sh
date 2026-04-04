@@ -90,7 +90,7 @@ fi
 echo "Building claudec (${CONFIG}) with runtimes: ${RUNTIMES}..."
 echo "  Traits: ${TRAITS}"
 
-swift build -c "${CONFIG}" --traits "${TRAITS}"
+swift build -c "${CONFIG}" --disable-default-traits --traits "${TRAITS}"
 
 BUILT_BINARY="${SCRIPT_DIR}/.build/${CONFIG}/claudec"
 OUTPUT_BINARY="${SCRIPT_DIR}/claudec"

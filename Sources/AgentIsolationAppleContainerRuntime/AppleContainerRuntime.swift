@@ -1,3 +1,4 @@
+#if canImport(Containerization)
 import AgentIsolation
 import Containerization
 import ContainerizationArchive
@@ -307,3 +308,4 @@ public enum AppleContainerRuntimeError: LocalizedError {
     }
   }
 }
+#endif

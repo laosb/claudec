@@ -1,3 +1,4 @@
+#if canImport(Containerization)
 import Containerization
 import Foundation
 
@@ -40,3 +41,4 @@ struct FileHandleWriter: Writer {
     try handle.close()
   }
 }
+#endif
