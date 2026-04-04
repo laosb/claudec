@@ -32,9 +32,21 @@ public final class DockerRuntime: ContainerRuntime, @unchecked Sendable {
     try await client.shutdown()
   }
 
+  /// JSON-encoded platform string for the current host architecture.
+  private static let currentPlatformJSON: String = {
+    #if arch(arm64)
+      return #"{"os":"linux","architecture":"arm64"}"#
+    #elseif arch(x86_64)
+      return #"{"os":"linux","architecture":"amd64"}"#
+    #else
+      return ""
+    #endif
+  }()
+
   public func pullImage(ref: String) async throws -> DockerImage? {
+    let platform = Self.currentPlatformJSON.isEmpty ? nil : Self.currentPlatformJSON
     do {
-      try await client.pullImage(ref: ref)
+      try await client.pullImage(ref: ref, platform: platform)
     } catch {
       return nil
     }
