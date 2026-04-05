@@ -230,6 +230,11 @@ public final class DockerContainer: ContainerRuntimeContainer, Sendable {
 
   public func wait(timeoutInSeconds: Int64?) async throws -> Int32 {
     let statusCode = try await client.waitContainer(id: id)
+    // Wait for the attach stream to finish reading all container output
+    // before returning, so nothing is lost when the caller proceeds to stop.
+    if let conn = attachConnection {
+      await conn.waitForReadCompletion()
+    }
     return Int32(statusCode)
   }
 

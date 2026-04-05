@@ -22,6 +22,8 @@ private struct AttachState: ~Copyable, @unchecked Sendable {
   var readSource: DispatchSourceRead?
   var writeSource: DispatchSourceRead?
   var demuxBuffer = Data()
+  var isReadDone = false
+  var readDoneContinuation: CheckedContinuation<Void, Never>?
 }
 
 /// Handles bidirectional I/O with a Docker container via the attach API.
@@ -91,7 +93,14 @@ final class DockerStreamAttach: Sendable {
     }
     socketReadSource.setCancelHandler { [weak self] in
       guard let self = self else { return }
-      self.state.withLock { $0.readSource = nil }
+      self.state.withLock { state in
+        state.readSource = nil
+        if !state.isReadDone {
+          state.isReadDone = true
+          state.readDoneContinuation?.resume()
+          state.readDoneContinuation = nil
+        }
+      }
     }
     self.state.withLock { $0.readSource = socketReadSource }
     socketReadSource.resume()
@@ -120,6 +129,21 @@ final class DockerStreamAttach: Sendable {
     stdinReadSource.resume()
   }
 
+  /// Wait for the socket read stream to finish (EOF or cancellation).
+  ///
+  /// Call after the container has exited to ensure all output has been
+  /// forwarded to stdout/stderr before the process exits.
+  func waitForReadCompletion() async {
+    await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+      let done = self.state.withLock { state -> Bool in
+        if state.isReadDone { return true }
+        state.readDoneContinuation = continuation
+        return false
+      }
+      if done { continuation.resume() }
+    }
+  }
+
   /// Stop the I/O and close the socket.
   func stop() {
     state.withLock { state in
@@ -127,6 +151,11 @@ final class DockerStreamAttach: Sendable {
       state.readSource = nil
       state.writeSource?.cancel()
       state.writeSource = nil
+      if !state.isReadDone {
+        state.isReadDone = true
+        state.readDoneContinuation?.resume()
+        state.readDoneContinuation = nil
+      }
     }
     close(fd)
   }
