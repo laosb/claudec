@@ -60,22 +60,19 @@
       }
     }
 
-    @Test("currentPlatformJSON returns valid JSON for current architecture")
-    func platformJSON() {
-      let json = DockerRuntime.currentPlatformJSON
-      #expect(!json.isEmpty, "Platform JSON should not be empty on supported architectures")
+    @Test("currentPlatform returns os/arch format for current architecture")
+    func platformString() {
+      let platform = DockerRuntime.currentPlatform
+      #expect(!platform.isEmpty, "Platform should not be empty on supported architectures")
 
-      // Parse and verify structure
-      let data = Data(json.utf8)
-      let obj = try? JSONSerialization.jsonObject(with: data) as? [String: String]
-      #expect(obj != nil, "Should be valid JSON")
-      #expect(obj?["os"] == "linux")
+      let parts = platform.split(separator: "/")
+      #expect(parts.count == 2, "Platform should have os/arch format")
+      #expect(parts[0] == "linux")
 
-      let arch = obj?["architecture"]
       #if arch(arm64)
-        #expect(arch == "arm64")
+        #expect(parts[1] == "arm64")
       #elseif arch(x86_64)
-        #expect(arch == "amd64")
+        #expect(parts[1] == "amd64")
       #endif
     }
 
@@ -220,23 +217,22 @@
       #expect(url.contains("tag=v1.0"))
     }
 
-    @Test("buildURL with platform JSON query encodes braces")
-    func buildURLWithPlatformJSON() async throws {
+    @Test("buildURL with platform query encodes slashes")
+    func buildURLWithPlatform() async throws {
       let client = DockerAPIClient(endpoint: "/var/run/docker.sock")
       defer { Task { try? await client.shutdown() } }
 
-      let platformJSON = #"{"os":"linux","architecture":"arm64"}"#
+      let platform = "linux/arm64"
       let url = client.buildURL(
         path: "/images/create",
         queryItems: [
           URLQueryItem(name: "fromImage", value: "alpine"),
           URLQueryItem(name: "tag", value: "latest"),
-          URLQueryItem(name: "platform", value: platformJSON),
+          URLQueryItem(name: "platform", value: platform),
         ])
-      // URLQueryItem should encode the JSON properly
       #expect(url.contains("platform="))
-      // The raw braces and colons should be percent-encoded in query
-      #expect(!url.contains("platform={"))
+      #expect(url.contains("linux"))
+      #expect(url.contains("arm64"))
     }
 
     @Test("buildURL with no query items omits question mark")
@@ -354,7 +350,7 @@
       try await runtime.prepare()
 
       let image = try await runtime.inspectImage(
-        ref: "this-image-definitely-does-not-exist-\(UUID().uuidString):latest")
+        ref: "this-image-definitely-does-not-exist-\(UUID().uuidString.lowercased()):latest")
       #expect(image == nil)
     }
 

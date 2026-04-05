@@ -132,7 +132,9 @@ final class DockerAPIClient: Sendable {
     request.method = .GET
 
     let response = try await httpClient.execute(request, timeout: .seconds(30))
-    if response.status == .notFound {
+    if response.status == .notFound || response.status == .badRequest {
+      // 404 = image not found; 400 = invalid reference format (e.g. uppercase chars).
+      // Either way the image cannot exist locally, so return nil.
       for try await _ in response.body {}
       return nil
     }
