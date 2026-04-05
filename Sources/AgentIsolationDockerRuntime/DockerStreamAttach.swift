@@ -219,6 +219,7 @@ final class DockerStreamAttach: Sendable {
   private func readUpgradeResponse() throws {
     var responseData = Data()
     var buffer = [UInt8](repeating: 0, count: 4096)
+    let separator: [UInt8] = [0x0D, 0x0A, 0x0D, 0x0A]  // \r\n\r\n
 
     // Read until we see the end of HTTP headers (\r\n\r\n)
     while true {
@@ -228,22 +229,24 @@ final class DockerStreamAttach: Sendable {
       }
       responseData.append(contentsOf: buffer[0..<bytesRead])
 
-      if let str = String(data: responseData, encoding: .utf8),
-        str.contains("\r\n\r\n")
-      {
+      // Search for \r\n\r\n in the raw bytes to find the header/body boundary.
+      // We must NOT use String.distance here because Swift counts \r\n as one
+      // Character (grapheme cluster), which would give a wrong byte offset.
+      guard let sepRange = responseData.range(of: Data(separator)) else { continue }
+      let headerEnd = sepRange.upperBound
+
+      if let str = String(data: responseData[..<headerEnd], encoding: .utf8) {
         guard str.contains("101") else {
           throw DockerRuntimeError.attachFailed(
             "Expected 101 Switching Protocols, got: \(str.prefix(200))")
         }
-        // Any data after the headers is already stream data — push it into the demux buffer
-        if let headerEnd = str.range(of: "\r\n\r\n") {
-          let headerSize = str.distance(from: str.startIndex, to: headerEnd.upperBound)
-          if responseData.count > headerSize {
-            state.withLock { $0.demuxBuffer.append(responseData[headerSize...]) }
-          }
-        }
-        return
       }
+
+      // Any data after the headers is already stream data — push it into the demux buffer
+      if responseData.count > headerEnd {
+        state.withLock { $0.demuxBuffer.append(responseData[headerEnd...]) }
+      }
+      return
     }
   }
 
