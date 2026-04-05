@@ -137,9 +137,10 @@ final class DockerAPIClient: Sendable {
       return nil
     }
     guard response.status == .ok else {
-      for try await _ in response.body {}
+      let body = try? await response.body.collect(upTo: 1024 * 1024)
+      let message = body.flatMap { String(buffer: $0) } ?? "unknown error"
       throw DockerRuntimeError.apiError(
-        Int(response.status.code), "Failed to inspect image \(ref)")
+        Int(response.status.code), "Failed to inspect image \(ref): \(message)")
     }
 
     let body = try await response.body.collect(upTo: 10 * 1024 * 1024)
