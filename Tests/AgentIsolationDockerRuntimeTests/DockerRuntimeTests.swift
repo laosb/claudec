@@ -310,6 +310,36 @@
       return DockerRuntime(config: config)
     }
 
+    private func makeClient() -> DockerAPIClient {
+      let endpoint =
+        ProcessInfo.processInfo.environment["CLAUDEC_DOCKER_ENDPOINT"]
+        ?? "/var/run/docker.sock"
+      return DockerAPIClient(endpoint: endpoint)
+    }
+
+    @Test("buildURL produces correct URLs for Docker API")
+    func verifyURLConstruction() async throws {
+      let client = makeClient()
+      defer { Task { try? await client.shutdown() } }
+
+      let pingURL = client.buildURL(path: "/_ping")
+      print("DIAG ping URL: \(pingURL)")
+      #expect(pingURL.hasSuffix("/v1.44/_ping"))
+
+      let inspectURL = client.buildURL(path: "/images/alpine:latest/json")
+      print("DIAG inspect URL: \(inspectURL)")
+      #expect(inspectURL.contains("/v1.44/images/"))
+
+      let pullURL = client.buildURL(
+        path: "/images/create",
+        queryItems: [
+          URLQueryItem(name: "fromImage", value: "alpine"),
+          URLQueryItem(name: "tag", value: "latest"),
+        ])
+      print("DIAG pull URL: \(pullURL)")
+      #expect(pullURL.contains("fromImage=alpine"))
+    }
+
     @Test("prepare succeeds when Docker is available")
     func prepareSucceeds() async throws {
       let runtime = makeRuntime()

@@ -49,6 +49,7 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
     do {
       try await client.pullImage(ref: ref, platform: platform)
     } catch {
+      logger.error("Failed to pull image \(ref): \(error)")
       return nil
     }
     return try await inspectImage(ref: ref)
