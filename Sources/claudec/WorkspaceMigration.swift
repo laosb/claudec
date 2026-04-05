@@ -6,7 +6,7 @@ import Foundation
 /// the path is derived from the container workspace mount point. When claudec changes
 /// its workspace naming scheme, this module detects legacy project folders and offers
 /// the user a choice to migrate, remove, or abort.
-public enum WorkspaceMigration {
+enum WorkspaceMigration {
 
   /// Check for a legacy workspace project folder and prompt the user for migration.
   ///
@@ -15,7 +15,7 @@ public enum WorkspaceMigration {
   ///   - legacyPath: The old container workspace path (e.g. `/workspace/<sha256>`).
   ///   - newPath: The new container workspace path (e.g. `/workspace/<name>-<hash10>`).
   /// - Throws: ``WorkspaceMigrationError/cancelled`` if the user chooses to quit.
-  public static func migrateIfNeeded(
+  static func migrateIfNeeded(
     profileHomeDir: URL,
     legacyPath: String,
     newPath: String
@@ -133,10 +133,10 @@ public enum WorkspaceMigration {
   }
 }
 
-public enum WorkspaceMigrationError: LocalizedError {
+enum WorkspaceMigrationError: LocalizedError {
   case cancelled
 
-  public var errorDescription: String? {
+  var errorDescription: String? {
     switch self {
     case .cancelled:
       return "claudec: Operation cancelled by user."

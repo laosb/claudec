@@ -70,6 +70,14 @@ struct ClaudecCommand: AsyncParsableCommand {
 
     let allocateTTY = isatty(STDIN_FILENO) == 1 && isatty(STDOUT_FILENO) == 1
 
+    // ── Check for legacy workspace migration ───────────────────────────
+    let profileHomeDir = profileDir.appending(path: "home")
+    try WorkspaceMigration.migrateIfNeeded(
+      profileHomeDir: profileHomeDir,
+      legacyPath: legacyWorkspaceContainerPath(for: workspace),
+      newPath: workspaceContainerPath(for: workspace)
+    )
+
     // ── Resolve container runtime ──────────────────────────────────────
     let runtimeName = resolveRuntimeName(env: env)
     let dockerEndpoint = env["CLAUDEC_DOCKER_ENDPOINT"]
@@ -83,7 +91,7 @@ struct ClaudecCommand: AsyncParsableCommand {
 
     let isolationConfig = IsolationConfig(
       image: image,
-      profileHomeDir: profileDir.appending(path: "home"),
+      profileHomeDir: profileHomeDir,
       workspace: workspace,
       excludeFolders: excludeFolders,
       bootstrapScript: bootstrapScript,
