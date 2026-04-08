@@ -30,8 +30,8 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
   public func run(entrypoint entrypointOverride: [String]? = nil) async throws -> Int32 {
     try await runtime.prepare()
 
-    let canonicalWorkspace = resolveSymlinksWithPrivate(config.workspace)
-    let wsContainerPath = workspaceContainerPath(for: config.workspace)
+    let canonicalWorkspace = AgentIsolationPathUtils.resolveSymlinksWithPrivate(config.workspace)
+    let wsContainerPath = AgentIsolationPathUtils.workspaceContainerPath(for: config.workspace)
 
     try FileManager.default.createDirectory(
       at: config.profileHomeDir,
@@ -70,7 +70,7 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
       tempDirs.append(tempDir)
       mounts.append(
         .init(
-          hostPath: resolveSymlinksWithPrivate(tempDir).path,
+          hostPath: AgentIsolationPathUtils.resolveSymlinksWithPrivate(tempDir).path,
           containerPath: "\(wsContainerPath)/\(folder)",
           isReadOnly: true
         ))
@@ -96,7 +96,7 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
       else { continue }
       for containerPath in settings.additionalMounts ?? [] {
         guard !containerPath.isEmpty else { continue }
-        let segment = pathSegment(for: containerPath)
+        let segment = AgentIsolationPathUtils.pathIdentifier(for: containerPath)
         let hostDir = additionalMountsDir.appendingPathComponent(segment)
         try FileManager.default.createDirectory(at: hostDir, withIntermediateDirectories: true)
         mounts.append(
@@ -126,7 +126,7 @@ public struct AgentSession<Runtime: ContainerRuntime>: Sendable {
 
       mounts.append(
         .init(
-          hostPath: resolveSymlinksWithPrivate(tempDir).path,
+          hostPath: AgentIsolationPathUtils.resolveSymlinksWithPrivate(tempDir).path,
           containerPath: "/entrypoint-bootstrap"
         ))
       overridesEntrypoint = true
