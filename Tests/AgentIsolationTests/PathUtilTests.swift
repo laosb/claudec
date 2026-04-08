@@ -2,8 +2,8 @@ import AgentIsolation
 import Foundation
 import Testing
 
-@Suite("Workspace Paths")
-struct WorkspacePathTests {
+@Suite("Path Utils")
+struct PathUtilTests {
   @Test("workspaceContainerPath format is folderName-last10hash")
   func newPathFormat() throws {
     let base = URL(fileURLWithPath: "/tmp/claudec-wp-\(UUID().uuidString)")
