@@ -110,8 +110,8 @@ struct ClaudecCommand: AsyncParsableCommand {
     let profileHomeDir = profileDir.appending(path: "home")
     try WorkspaceMigration.migrateIfNeeded(
       profileHomeDir: profileHomeDir,
-      legacyPath: legacyWorkspaceContainerPath(for: workspace),
-      newPath: workspaceContainerPath(for: workspace)
+      legacyPath: AgentIsolationPathUtils.legacyWorkspaceContainerPath(for: workspace),
+      newPath: AgentIsolationPathUtils.workspaceContainerPath(for: workspace)
     )
 
     // ── Resolve container runtime ──────────────────────────────────────

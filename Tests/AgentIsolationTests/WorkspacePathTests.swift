@@ -11,7 +11,7 @@ struct WorkspacePathTests {
     try FileManager.default.createDirectory(at: wsDir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: base) }
 
-    let path = workspaceContainerPath(for: wsDir)
+    let path = AgentIsolationPathUtils.workspaceContainerPath(for: wsDir)
     // Should start with /workspace/myproject-
     #expect(path.hasPrefix("/workspace/myproject-"))
     // The suffix should be exactly 10 hex chars
@@ -28,7 +28,7 @@ struct WorkspacePathTests {
     try FileManager.default.createDirectory(at: wsDir, withIntermediateDirectories: true)
     defer { try? FileManager.default.removeItem(at: base) }
 
-    let path = legacyWorkspaceContainerPath(for: wsDir)
+    let path = AgentIsolationPathUtils.legacyWorkspaceContainerPath(for: wsDir)
     #expect(path.hasPrefix("/workspace/"))
     // Legacy path should be /workspace/<64-char hex sha256>
     let hash = String(path.dropFirst("/workspace/".count))
@@ -56,6 +56,6 @@ struct WorkspacePathTests {
     _ = try await session.run()
 
     let workDir = runtime.lastContainerConfiguration!.workingDirectory!
-    #expect(workDir == workspaceContainerPath(for: wsDir))
+    #expect(workDir == AgentIsolationPathUtils.workspaceContainerPath(for: wsDir))
   }
 }

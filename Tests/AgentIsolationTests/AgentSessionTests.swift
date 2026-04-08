@@ -329,7 +329,7 @@ struct PathSegmentTests {
 
   @Test("pathSegment format is lastComponent-last10hash")
   func format() {
-    let segment = pathSegment(for: "/data/models/llm")
+    let segment = AgentIsolationPathUtils.pathIdentifier(for: "/data/models/llm")
     #expect(segment.hasPrefix("llm-"))
     let parts = segment.split(separator: "-")
     let hashPart = String(parts.last!)
@@ -339,15 +339,15 @@ struct PathSegmentTests {
 
   @Test("pathSegment is deterministic")
   func deterministic() {
-    let a = pathSegment(for: "/data/models/llm")
-    let b = pathSegment(for: "/data/models/llm")
+    let a = AgentIsolationPathUtils.pathIdentifier(for: "/data/models/llm")
+    let b = AgentIsolationPathUtils.pathIdentifier(for: "/data/models/llm")
     #expect(a == b)
   }
 
   @Test("pathSegment differs for different paths")
   func different() {
-    let a = pathSegment(for: "/data/models/llm")
-    let b = pathSegment(for: "/data/models/other")
+    let a = AgentIsolationPathUtils.pathIdentifier(for: "/data/models/llm")
+    let b = AgentIsolationPathUtils.pathIdentifier(for: "/data/models/other")
     #expect(a != b)
   }
 
@@ -365,8 +365,8 @@ struct PathSegmentTests {
     #else
       let canonical = resolved.path
     #endif
-    let expected = "/workspace/\(pathSegment(for: canonical))"
-    #expect(workspaceContainerPath(for: wsDir) == expected)
+    let expected = "/workspace/\(AgentIsolationPathUtils.pathIdentifier(for: canonical))"
+    #expect(AgentIsolationPathUtils.workspaceContainerPath(for: wsDir) == expected)
   }
 }
 
@@ -477,7 +477,7 @@ struct ConfigurationTests {
     #expect(additionalMount?.isReadOnly == false)
 
     // Verify host path uses pathSegment in additionalMounts dir
-    let expectedSegment = pathSegment(for: "/data/models")
+    let expectedSegment = AgentIsolationPathUtils.pathIdentifier(for: "/data/models")
     #expect(additionalMount?.hostPath.contains("additionalMounts/\(expectedSegment)") == true)
   }
 
@@ -666,7 +666,7 @@ struct ConfigurationTests {
     _ = try await session.run()
 
     // Verify the host directory was actually created
-    let expectedSegment = pathSegment(for: "/data/persistent")
+    let expectedSegment = AgentIsolationPathUtils.pathIdentifier(for: "/data/persistent")
     let expectedHostDir =
       base
       .appendingPathComponent("additionalMounts")
