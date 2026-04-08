@@ -2,8 +2,10 @@ import Crypto
 import Foundation
 
 public enum AgentIsolationPathUtils {
-  /// Resolve symlinks and handle macOS `/tmp`, `/var`, `/etc` → `/private/...` mapping.
-  static func resolveSymlinksWithPrivate(_ url: URL) -> URL {
+  /// Resolve symlinks with platform consideration.
+  ///
+  /// On macOS, `/tmp`, `/var`, `/etc` → `/private/...` mapping is applied.
+  static func resolveSymlinksWithPlatformConsiderations(_ url: URL) -> URL {
     let resolved = url.resolvingSymlinksInPath()
     #if os(macOS)
       let parts = resolved.pathComponents
@@ -44,7 +46,7 @@ public enum AgentIsolationPathUtils {
   /// last path component of the canonical workspace path and `last10sha` is the last 10
   /// characters of the SHA-256 hex digest of the full canonical path.
   public static func workspaceContainerPath(for workspace: URL) -> String {
-    let canonical = resolveSymlinksWithPrivate(workspace)
+    let canonical = resolveSymlinksWithPlatformConsiderations(workspace)
     return "/workspace/\(pathIdentifier(for: canonical.path))"
   }
 
@@ -53,7 +55,7 @@ public enum AgentIsolationPathUtils {
   /// The legacy format is `/workspace/<sha256>` where the SHA-256 is the full hex digest
   /// of the canonical workspace path.
   public static func legacyWorkspaceContainerPath(for workspace: URL) -> String {
-    let canonical = resolveSymlinksWithPrivate(workspace)
+    let canonical = resolveSymlinksWithPlatformConsiderations(workspace)
     return "/workspace/\(sha256Hex(canonical.path))"
   }
 }
