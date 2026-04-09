@@ -206,6 +206,40 @@ struct AgentcIntegrationTests {
     #expect(result.output.contains("bun"))
   }
 
+  @Test("Container has /etc/hosts with localhost entries")
+  func etcHosts() async throws {
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--bootstrap-script", bootstrapScriptPath,
+        "--no-update-image",
+        "--", "cat", "/etc/hosts",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    #expect(result.output.contains("127.0.0.1"))
+    #expect(result.output.contains("localhost"))
+  }
+
+  @Test("Container runs with init process (PID 1 is not the entrypoint)")
+  func initProcess() async throws {
+    let result = await runAgentc(
+      args: [
+        "sh",
+        "--profile", sharedProfile,
+        "--bootstrap-script", bootstrapScriptPath,
+        "--no-update-image",
+        "--", "cat", "/proc/1/cmdline",
+      ]
+    )
+    #expect(result.exitCode == 0)
+    // When useInit is enabled, PID 1 should be the init process (vminitd),
+    // not the entrypoint script. The entrypoint will run as a child process.
+    let cmdline = result.output
+    #expect(!cmdline.contains("entrypoint"))
+  }
+
   @Test("Positional configurations argument works for run")
   func positionalConfigurations() async throws {
     let tempDir = URL(fileURLWithPath: "/tmp/__TEST_agentc_posconf.\(UUID().uuidString.prefix(6))")
