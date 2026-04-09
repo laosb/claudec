@@ -106,14 +106,16 @@ jobs:
           git clone --depth 1 https://github.com/laosb/agent-isolation-configurations ~/.claudec/configurations
           touch ~/.claudec/configurations/.claudec-last-pull
 
-      - name: Cache shared test profile
+      - name: Cache shared test profiles
         uses: actions/cache@v4
         with:
-          path: ~/.claudec/profiles/__TEST_shared_swift
+          path: |
+            ~/.claudec/profiles/__TEST_shared_swift
+            ~/.claudec/profiles/__TEST_agentc_shared
           key: claudec-test-profile-${{ matrix.arch }}-${{ hashFiles('bootstrap.sh', 'Dockerfile') }}
 
       - name: Run integration tests
-        run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter ClaudecIntegrationTests
+        run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter 'ClaudecIntegrationTests|AgentcIntegrationTests'
         env:
           CLAUDEC_CONTAINER_RUNTIME: docker
           VERBOSE: 1
@@ -156,21 +158,25 @@ jobs:
         run: bash build.sh --runtimes docker --swift-sdk ${{ matrix.swift-sdk }}
 
       - name: Verify static linking
-        run: file ./claudec | tee /dev/stderr | grep -q "statically linked"
+        run: |
+          file ./claudec | tee /dev/stderr | grep -q "statically linked"
+          file ./agentc | tee /dev/stderr | grep -q "statically linked"
 
       - name: Pre-clone configurations repo
         run: |
           git clone --depth 1 https://github.com/laosb/agent-isolation-configurations ~/.claudec/configurations
           touch ~/.claudec/configurations/.claudec-last-pull
 
-      - name: Cache shared test profile
+      - name: Cache shared test profiles
         uses: actions/cache@v4
         with:
-          path: ~/.claudec/profiles/__TEST_shared_swift
+          path: |
+            ~/.claudec/profiles/__TEST_shared_swift
+            ~/.claudec/profiles/__TEST_agentc_shared
           key: claudec-test-profile-static-${{ matrix.arch }}-${{ hashFiles('bootstrap.sh', 'Dockerfile') }}
 
       - name: Run integration tests
-        run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter ClaudecIntegrationTests
+        run: swift test --disable-default-traits --traits ContainerRuntimeDocker --filter 'ClaudecIntegrationTests|AgentcIntegrationTests'
         env:
           CLAUDEC_CONTAINER_RUNTIME: docker
           VERBOSE: 1
