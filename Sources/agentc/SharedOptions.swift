@@ -59,6 +59,9 @@ struct SharedOptions: ParsableArguments {
 
   @Option(name: .long, help: "Container memory limit (e.g. '1536m').")
   var memoryLimit: String = "1536m"
+
+  @Flag(name: .long, help: "Skip the migration check for legacy ~/.claudec data.")
+  var suppressMigrationFromClaudec: Bool = false
 }
 
 // MARK: - Resolution helpers

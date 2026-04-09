@@ -35,6 +35,9 @@ struct RunCommand: AsyncParsableCommand {
   var entrypointArguments: [String] = []
 
   mutating func run() async throws {
+    // Check for legacy claudec data before proceeding
+    try MigrationCheck.checkIfNeeded(suppress: options.suppressMigrationFromClaudec)
+
     let (_, profileDir) = options.resolveProfile()
     let profileHomeDir = profileDir.appending(path: "home")
     let workspace = options.resolveWorkspace()
