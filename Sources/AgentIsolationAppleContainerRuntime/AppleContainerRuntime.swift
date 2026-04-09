@@ -121,8 +121,6 @@
       ) { containerConfig in
         containerConfig.cpus = 4
         containerConfig.memoryInBytes = UInt64(1536).mib()
-        
-        containerConfig.hosts
 
         // Entrypoint
         if !configuration.entrypoint.isEmpty {
