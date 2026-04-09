@@ -100,5 +100,11 @@ let package = Package(
         .product(name: "Crypto", package: "swift-crypto"),
       ]
     ),
+    .testTarget(
+      name: "AgentcIntegrationTests",
+      dependencies: [
+        .product(name: "Crypto", package: "swift-crypto"),
+      ]
+    ),
   ]
 )

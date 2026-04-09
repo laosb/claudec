@@ -53,6 +53,9 @@ struct RunCommand: AsyncParsableCommand {
 
     let bootstrapScript: URL? = options.bootstrapScript.map { URL(fileURLWithPath: $0) }
 
+    // captureForPassthrough includes the "--" terminator; strip it.
+    let forwardedArgs = Array(entrypointArguments.drop(while: { $0 == "--" }))
+
     let isolationConfig = IsolationConfig(
       image: options.image,
       profileHomeDir: profileHomeDir,
@@ -61,7 +64,7 @@ struct RunCommand: AsyncParsableCommand {
       configurationsDir: configurationsDir,
       configurations: configNames,
       bootstrapScript: bootstrapScript,
-      arguments: entrypointArguments,
+      arguments: forwardedArgs,
       allocateTTY: allocateTTY,
       memoryLimit: options.memoryLimit,
       additionalHostMounts: options.additionalMount.map { URL(fileURLWithPath: $0) }

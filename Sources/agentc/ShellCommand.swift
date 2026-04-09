@@ -58,11 +58,13 @@ struct ShellCommand: AsyncParsableCommand {
     let bootstrapScript: URL? = options.bootstrapScript.map { URL(fileURLWithPath: $0) }
 
     // Build the entrypoint override for shell dispatch
+    // captureForPassthrough includes the "--" terminator; strip it.
+    let args = command.drop(while: { $0 == "--" })
     let entrypointOverride: [String]
-    if command.isEmpty {
+    if args.isEmpty {
       entrypointOverride = ["/bin/bash"]
     } else {
-      entrypointOverride = ["/bin/bash", "-c", command.joined(separator: " ")]
+      entrypointOverride = ["/bin/bash", "-c", args.joined(separator: " ")]
     }
 
     let isolationConfig = IsolationConfig(
