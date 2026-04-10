@@ -60,7 +60,7 @@ struct SharedOptions: ParsableArguments {
   @Option(name: .long, help: "Number of CPUs to allocate to the container.")
   var cpuCount: Int = 1
 
-  @Option(name: .long, help: "Container memory limit in MiB (e.g. 1536 = 1.5 GiB).")
+  @Option(name: .customLong("memory-limit-mib"), help: "Container memory limit in MiB (e.g. 1536 = 1.5 GiB).")
   var memoryLimitMiB: Int = 1536
 
   @Flag(name: .long, help: "Skip the migration check for legacy ~/.claudec data.")
