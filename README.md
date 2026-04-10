@@ -26,8 +26,8 @@ This detects your platform, downloads the latest release from GitHub, and instal
 
 ```sh
 agentc run                          # start default agent (claude) in $PWD
-agentc run claude,copilot           # activate multiple configurations
-agentc run -- "explain this code"   # forward args to the agent entrypoint
+agentc run -c claude,copilot        # activate multiple configurations
+agentc run "explain this code"      # forward args to the agent entrypoint
 agentc sh                           # open a shell in the container
 agentc sh -- ls -la /home/agent     # run a command inside the container
 agentc version                      # print version info
@@ -42,7 +42,7 @@ Use `agentc --help` and `agentc <subcommand> --help` for full CLI reference.
 A profile is a persistent `/home/agent` directory that survives container restarts — keeping agent auth, memory, settings, and MCP servers.
 
 ```sh
-agentc run --profile work           # use a named profile
+agentc run -p work                  # use a named profile
 agentc run --profile-dir ~/my-prof  # use a custom directory
 ```
 
@@ -53,9 +53,11 @@ Profiles are stored at `~/.agentc/profiles/<name>/home/`.
 Agent configurations are modular setup recipes. Each configuration provides a `prepare.sh` script, optional additional PATH entries, and an entrypoint command. The last configuration's entrypoint is used.
 
 ```sh
-agentc run -c claude                # just Claude Code
-agentc run -c claude,copilot        # Claude Code + GitHub Copilot CLI
-agentc run copilot                  # just GitHub Copilot CLI
+# makes sure both Claude Code + GitHub Copilot CLI installed, but invokes GitHub Copilot CLI
+agentc run -c claude,copilot
+
+# just GitHub Copilot CLI
+agentc run -c copilot
 ```
 
 ## Architecture
