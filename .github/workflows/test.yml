@@ -38,6 +38,14 @@ jobs:
         with:
           swift-version: "6.3"
 
+      - name: Cache SPM build artifacts
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-unit-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: |
+            spm-unit-${{ matrix.os }}-${{ matrix.arch }}-
+
       - name: Run unit tests
         run: swift test --disable-default-traits --traits "${{ matrix.traits }}" --filter 'AgentIsolationTests|AgentIsolationDockerRuntimeTests'
 
@@ -89,6 +97,14 @@ jobs:
         uses: SwiftyLab/setup-swift@latest
         with:
           swift-version: "6.3"
+
+      - name: Cache SPM build artifacts
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-integration-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: |
+            spm-integration-${{ matrix.os }}-${{ matrix.arch }}-
 
       - name: Download base image
         uses: actions/download-artifact@v4
@@ -142,8 +158,24 @@ jobs:
         with:
           swift-version: "6.3"
 
+      - name: Cache Static Linux SDK
+        id: cache-static-sdk
+        uses: actions/cache@v4
+        with:
+          path: ~/.swiftpm/swift-sdks
+          key: static-sdk-${{ matrix.swift-sdk }}-6.3
+
       - name: Install Static Linux SDK
+        if: steps.cache-static-sdk.outputs.cache-hit != 'true'
         run: swift sdk install https://download.swift.org/swift-6.3-release/static-sdk/swift-6.3-RELEASE/swift-6.3-RELEASE_static-linux-0.1.0.artifactbundle.tar.gz --checksum d2078b69bdeb5c31202c10e9d8a11d6f66f82938b51a4b75f032ccb35c4c286c
+
+      - name: Cache SPM build artifacts
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-static-${{ matrix.os }}-${{ matrix.arch }}-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: |
+            spm-static-${{ matrix.os }}-${{ matrix.arch }}-
 
       - name: Download base image
         uses: actions/download-artifact@v4
