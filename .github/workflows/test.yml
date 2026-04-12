@@ -142,6 +142,7 @@ jobs:
           docker pull docker.io/library/debian:latest
           docker pull docker.io/library/alpine:latest
           docker pull docker.io/library/buildpack-deps:scm
+          docker pull docker.io/library/swift:6.3
 
       - name: Pre-clone configurations repo
         run: |
@@ -230,6 +231,7 @@ jobs:
           docker pull docker.io/library/debian:latest
           docker pull docker.io/library/alpine:latest
           docker pull docker.io/library/buildpack-deps:scm
+          docker pull docker.io/library/swift:6.3
 
       - name: Pre-clone configurations repo
         run: |
