@@ -16,7 +16,7 @@
       let configurations =
         (Helpers.envVar("AGENTC_CONFIGURATIONS") ?? "claude")
         .split(separator: ",")
-        .map { $0.trimmingCharacters(in: .whitespaces) }
+        .map { String($0).trimmingCharacters(in: .whitespaces) }
 
       let home = Helpers.envVar("HOME") ?? "/home/agent"
 

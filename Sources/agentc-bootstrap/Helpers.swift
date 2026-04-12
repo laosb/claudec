@@ -1,6 +1,6 @@
 #if canImport(FoundationEssentials) && canImport(Musl)
   import FoundationEssentials
-  import Musl
+  @preconcurrency import Musl
 
   // MARK: - Errors
 
@@ -154,10 +154,19 @@
     /// Recursively change ownership. Best-effort, errors are silently ignored.
     static func chownRecursive(_ path: String, uid: uid_t, gid: gid_t) {
       chown(path, uid, gid)
-      guard let enumerator = FileManager.default.enumerator(atPath: path)
-      else { return }
-      while let relative = enumerator.nextObject() as? String {
-        chown("\(path)/\(relative)", uid, gid)
+      guard let dp = opendir(path) else { return }
+      defer { closedir(dp) }
+      while let entry = readdir(dp) {
+        var d_name = entry.pointee.d_name
+        let name = withUnsafePointer(to: &d_name) {
+          String(cString: UnsafeRawPointer($0).assumingMemoryBound(to: CChar.self))
+        }
+        if name == "." || name == ".." { continue }
+        let fullPath = "\(path)/\(name)"
+        chown(fullPath, uid, gid)
+        if Int32(entry.pointee.d_type) == Int32(DT_DIR) {
+          chownRecursive(fullPath, uid: uid, gid: gid)
+        }
       }
     }
 
