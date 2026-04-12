@@ -36,17 +36,25 @@ let package = Package(
     .target(
       name: "AgentIsolation",
       dependencies: [
-        .product(name: "Crypto", package: "swift-crypto"),
+        .product(name: "Crypto", package: "swift-crypto")
       ]
     ),
     .target(
       name: "AgentIsolationAppleContainerRuntime",
       dependencies: [
         "AgentIsolation",
-        .product(name: "Containerization", package: "containerization", condition: .when(platforms: [.macOS])),
-        .product(name: "ContainerizationOCI", package: "containerization", condition: .when(platforms: [.macOS])),
-        .product(name: "ContainerizationOS", package: "containerization", condition: .when(platforms: [.macOS])),
-        .product(name: "ContainerizationArchive", package: "containerization", condition: .when(platforms: [.macOS])),
+        .product(
+          name: "Containerization", package: "containerization",
+          condition: .when(platforms: [.macOS])),
+        .product(
+          name: "ContainerizationOCI", package: "containerization",
+          condition: .when(platforms: [.macOS])),
+        .product(
+          name: "ContainerizationOS", package: "containerization",
+          condition: .when(platforms: [.macOS])),
+        .product(
+          name: "ContainerizationArchive", package: "containerization",
+          condition: .when(platforms: [.macOS])),
         .product(name: "Logging", package: "swift-log", condition: .when(platforms: [.macOS])),
       ]
     ),
@@ -64,8 +72,11 @@ let package = Package(
       name: "agentc",
       dependencies: [
         "AgentIsolation",
-        .target(name: "AgentIsolationAppleContainerRuntime", condition: .when(traits: ["ContainerRuntimeAppleContainer"])),
-        .target(name: "AgentIsolationDockerRuntime", condition: .when(traits: ["ContainerRuntimeDocker"])),
+        .target(
+          name: "AgentIsolationAppleContainerRuntime",
+          condition: .when(traits: ["ContainerRuntimeAppleContainer"])),
+        .target(
+          name: "AgentIsolationDockerRuntime", condition: .when(traits: ["ContainerRuntimeDocker"])),
         .product(name: "ArgumentParser", package: "swift-argument-parser"),
         .product(name: "Logging", package: "swift-log"),
       ]
@@ -85,13 +96,14 @@ let package = Package(
       name: "AgentIsolationDockerRuntimeTests",
       dependencies: [
         "AgentIsolation",
-        .target(name: "AgentIsolationDockerRuntime", condition: .when(traits: ["ContainerRuntimeDocker"])),
+        .target(
+          name: "AgentIsolationDockerRuntime", condition: .when(traits: ["ContainerRuntimeDocker"])),
       ]
     ),
     .testTarget(
       name: "AgentcIntegrationTests",
       dependencies: [
-        .product(name: "Crypto", package: "swift-crypto"),
+        .product(name: "Crypto", package: "swift-crypto")
       ]
     ),
   ]

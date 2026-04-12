@@ -1,4 +1,4 @@
-#if os(Linux)
+#if canImport(FoundationEssentials) && canImport(Musl)
   import FoundationEssentials
   import Musl
 
