@@ -7,7 +7,7 @@
 //   Phase 2 (agent): Process agent configurations, set up PATH, run
 //                    prepare.sh scripts, then exec the entrypoint.
 
-#if os(Linux)
+#if canImport(FoundationEssentials) && canImport(Musl)
   import FoundationEssentials
   import Musl
 
