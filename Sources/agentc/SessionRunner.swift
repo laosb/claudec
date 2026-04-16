@@ -1,7 +1,10 @@
 import AgentIsolation
-import ArgumentParser
-import Foundation
-import Logging
+
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 #if ContainerRuntimeAppleContainer
   import AgentIsolationAppleContainerRuntime
@@ -10,27 +13,26 @@ import Logging
   import AgentIsolationDockerRuntime
 #endif
 
-struct ShellCommand: AsyncParsableCommand {
-  static let configuration = CommandConfiguration(
-    commandName: "sh",
-    abstract: "Open a shell or run a command inside the container",
-    discussion: """
-      Without arguments, opens an interactive bash shell. With arguments, runs the specified command.
+/// Shared logic for commands that resolve configuration, set up a container
+/// runtime, and run an agent session.
+enum SessionRunner {
 
-      Examples:
-        agentc sh                           # interactive shell
-        agentc sh echo hello                # run a command
-        agentc sh -- ls -la /home/agent     # run with flags
-        agentc sh -c claude cat file.txt    # specific configuration
-      """
-  )
-
-  @OptionGroup var options: SharedOptions
-
-  @Argument(parsing: .remaining, help: "Command and arguments to run.")
-  var command: [String] = []
-
-  mutating func run() async throws {
+  /// Resolve all configuration from `options`, set up the container runtime,
+  /// and run an agent session.
+  ///
+  /// - Parameters:
+  ///   - options: The shared CLI options.
+  ///   - configurationsPositional: Optional positional override for configuration names.
+  ///   - allocateTTY: Whether to attach a TTY to the container.
+  ///   - arguments: Pre-resolved arguments forwarded to the entrypoint.
+  ///   - entrypoint: Optional entrypoint override (e.g. for shell commands).
+  static func run(
+    options: SharedOptions,
+    configurationsPositional: String?,
+    allocateTTY: Bool,
+    arguments: [String],
+    entrypoint: [String]? = nil
+  ) async throws -> Int32 {
     // Check for legacy claudec data before proceeding
     try MigrationCheck.checkIfNeeded(suppress: options.suppressMigrationFromClaudec)
 
@@ -41,16 +43,9 @@ struct ShellCommand: AsyncParsableCommand {
     let workspace = options.resolveWorkspace()
     let configurationsDir = options.resolveConfigurationsDir()
     let configNames = options.resolveConfigurations(
-      positional: nil, profileDir: profileDir, projectSettings: projectSettings)
+      positional: configurationsPositional, profileDir: profileDir,
+      projectSettings: projectSettings)
     let excludeFolders = options.resolveExcludeFolders(projectSettings: projectSettings)
-
-    // sh is interactive when no command is given
-    let allocateTTY: Bool
-    if command.isEmpty {
-      allocateTTY = isatty(STDIN_FILENO) == 1 && isatty(STDOUT_FILENO) == 1
-    } else {
-      allocateTTY = false
-    }
 
     // Ensure configurations repo
     try ConfigurationsManager.ensureRepo(
@@ -58,14 +53,6 @@ struct ShellCommand: AsyncParsableCommand {
       repoURL: options.configurationsRepo,
       updateInterval: options.configurationsUpdateInterval
     )
-
-    // Build the entrypoint override for shell dispatch
-    let entrypointOverride: [String]
-    if command.isEmpty {
-      entrypointOverride = ["/bin/bash"]
-    } else {
-      entrypointOverride = ["/bin/bash", "-c", command.joined(separator: " ")]
-    }
 
     let resolvedImage = options.resolveImage(projectSettings: projectSettings)
 
@@ -77,7 +64,7 @@ struct ShellCommand: AsyncParsableCommand {
       configurationsDir: configurationsDir,
       configurations: configNames,
       bootstrapMode: try options.resolveBootstrapMode(projectSettings: projectSettings),
-      arguments: [],
+      arguments: arguments,
       allocateTTY: allocateTTY,
       cpuCount: options.resolveCpuCount(projectSettings: projectSettings),
       memoryLimitMiB: options.resolveMemoryLimitMiB(projectSettings: projectSettings),
@@ -85,13 +72,16 @@ struct ShellCommand: AsyncParsableCommand {
       verbose: options.verbose
     )
 
-    let exitCode = try await runShellSession(
-      config: isolationConfig, entrypoint: entrypointOverride)
-    throw ExitCode(exitCode)
+    return try await dispatchToRuntime(
+      options: options, config: isolationConfig, entrypoint: entrypoint)
   }
 
-  private func runShellSession(
-    config: IsolationConfig, entrypoint: [String]
+  // MARK: - Runtime dispatch
+
+  private static func dispatchToRuntime(
+    options: SharedOptions,
+    config: IsolationConfig,
+    entrypoint: [String]?
   ) async throws -> Int32 {
     let storagePath =
       FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
@@ -106,26 +96,52 @@ struct ShellCommand: AsyncParsableCommand {
     return switch choice {
     case .docker:
       #if ContainerRuntimeDocker
-        try await runShellSessionWithRuntime(
-          DockerRuntime(config: runtimeConfig), config: config, entrypoint: entrypoint)
+        try await executeSession(
+          runtime: DockerRuntime(config: runtimeConfig),
+          config: config,
+          options: options,
+          entrypoint: entrypoint)
       #else
         throw AgentcError.runtimeNotAvailable("docker")
       #endif
     case .appleContainer:
       #if ContainerRuntimeAppleContainer
-        try await runShellSessionWithRuntime(
-          AppleContainerRuntime(config: runtimeConfig), config: config, entrypoint: entrypoint)
+        try await executeSession(
+          runtime: AppleContainerRuntime(config: runtimeConfig),
+          config: config,
+          options: options,
+          entrypoint: entrypoint)
       #else
         throw AgentcError.runtimeNotAvailable("apple-container")
       #endif
     }
   }
 
-  private func runShellSessionWithRuntime<R: ContainerRuntime>(
-    _ runtime: R, config: IsolationConfig, entrypoint: [String]
+  private static func executeSession<R: ContainerRuntime>(
+    runtime: R,
+    config: IsolationConfig,
+    options: SharedOptions,
+    entrypoint: [String]?
   ) async throws -> Int32 {
     defer { Task { try? await runtime.shutdown() } }
+    if options.updateImage {
+      try await runtime.prepare()
+      let oldImage = try? await runtime.inspectImage(ref: config.image)
+      let newImage = try? await runtime.pullImage(ref: config.image)
+      if let oldImage, let newImage, oldImage.digest != newImage.digest {
+        if options.verbose {
+          print("agentc: loaded newer image for \(config.image)")
+        }
+        if !options.keepOldImage {
+          try? await runtime.removeImage(digest: oldImage.digest)
+        }
+      }
+    }
     let session = AgentSession(config: config, runtime: runtime)
-    return try await session.run(entrypoint: entrypoint)
+    if let entrypoint {
+      return try await session.run(entrypoint: entrypoint)
+    } else {
+      return try await session.run()
+    }
   }
 }

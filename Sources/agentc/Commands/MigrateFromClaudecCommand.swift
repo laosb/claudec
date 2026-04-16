@@ -1,5 +1,10 @@
 import ArgumentParser
-import Foundation
+
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 struct MigrateFromClaudecCommand: ParsableCommand {
   static let configuration = CommandConfiguration(

@@ -1,4 +1,8 @@
-import Foundation
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 /// Manages the agent-isolation-configurations git repository (clone / pull).
 enum ConfigurationsManager {

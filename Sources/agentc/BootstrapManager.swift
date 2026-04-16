@@ -1,4 +1,8 @@
-import Foundation
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 /// Locates or downloads the agentc-bootstrap binary used as the container entrypoint.
 enum BootstrapManager {

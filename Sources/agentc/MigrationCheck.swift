@@ -1,5 +1,10 @@
 import ArgumentParser
-import Foundation
+
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 /// Checks whether the user should migrate from the legacy ~/.claudec directory.
 ///

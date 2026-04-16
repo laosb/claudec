@@ -1,7 +1,12 @@
 import AsyncHTTPClient
-import Foundation
 import NIOCore
 import NIOFoundationCompat
+
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 /// HTTP client for Docker Engine API v1.44.
 ///

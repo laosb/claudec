@@ -1,6 +1,11 @@
 import AgentIsolation
 import ArgumentParser
-import Foundation
+
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 struct SharedOptions: ParsableArguments {
   @Option(name: .shortAndLong, help: "Container runtime.")

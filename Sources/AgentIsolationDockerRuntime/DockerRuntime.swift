@@ -1,7 +1,12 @@
 import AgentIsolation
-import Foundation
 import Logging
 import Synchronization
+
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 // MARK: - DockerRuntime
 
