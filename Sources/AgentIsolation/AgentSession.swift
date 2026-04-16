@@ -1,4 +1,8 @@
-import Foundation
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 /// Settings from an agent configuration's settings.json.
 private struct AgentConfigurationSettings: Decodable {

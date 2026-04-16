@@ -1,4 +1,8 @@
-import Foundation
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 /// Determines how the container entrypoint is configured.
 public enum BootstrapMode: Sendable {

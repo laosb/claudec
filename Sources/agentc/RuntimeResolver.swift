@@ -1,5 +1,10 @@
 import ArgumentParser
-import Foundation
+
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 /// Determine which container runtime to use.
 enum RuntimeChoice: String, ExpressibleByArgument, CaseIterable, Sendable {

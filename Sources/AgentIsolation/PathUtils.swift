@@ -1,5 +1,10 @@
 import Crypto
-import Foundation
+
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 public enum AgentIsolationPathUtils {
   /// Resolve symlinks with platform consideration.
