@@ -1,4 +1,8 @@
-import Foundation
+#if canImport(FoundationEssentials)
+  import FoundationEssentials
+#else
+  import Foundation
+#endif
 
 #if canImport(Darwin)
   import Darwin
@@ -42,7 +46,7 @@ public final class FileLock: @unchecked Sendable {
     }
   }
 
-  private var descriptor: Int32
+  fileprivate var descriptor: Int32
   public let path: String
 
   private init(descriptor: Int32, path: String) {
@@ -97,5 +101,21 @@ public final class FileLock: @unchecked Sendable {
       throw Error.cannotOpen(path: url.path, errno: errno)
     }
     return descriptor
+  }
+}
+
+extension FileLock {
+  /// Convert an already-held lock to another mode on the same descriptor.
+  ///
+  /// Used to downgrade an exclusive repair lease to the shared lease an ordinary
+  /// session holds for the rest of its life. `flock` performs the conversion on
+  /// the existing open file description, so the lock is never fully dropped and
+  /// reacquired — but callers must still serialize conversions against each other,
+  /// because a downgrade momentarily admits waiting shared holders.
+  public func convert(to mode: Mode) throws {
+    guard descriptor >= 0 else { return }
+    guard flock(descriptor, mode.flag) == 0 else {
+      throw Error.cannotLock(path: path, errno: errno)
+    }
   }
 }

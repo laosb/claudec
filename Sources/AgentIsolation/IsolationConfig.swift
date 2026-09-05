@@ -26,6 +26,25 @@ public enum BootstrapMode: Sendable {
   }
 }
 
+/// Protocols the resolved bootstrap binary is known to speak.
+///
+/// A capability is carried alongside the artifact it describes — it is never
+/// inferred from a filename, and never assumed for a bootstrap agentc did not
+/// resolve itself. A bootstrap that declares nothing keeps its existing behavior
+/// and is never made to wait for a message it cannot produce.
+public struct BootstrapCapabilities: OptionSet, Sendable, Equatable {
+  public let rawValue: Int
+
+  public init(rawValue: Int) {
+    self.rawValue = rawValue
+  }
+
+  /// Speaks the profile-ownership handshake: reports the guest identity it
+  /// actually resolved and waits for the host to acknowledge before running any
+  /// preparation script or workload.
+  public static let profileOwnershipHandshake = BootstrapCapabilities(rawValue: 1 << 0)
+}
+
 /// Determines how host-backed mount destinations are represented in the container.
 public enum MountPathScheme: String, Codable, Sendable {
   /// Mount host paths beneath `/workspace` using a stable, canonical-path identifier.
@@ -114,6 +133,25 @@ public struct IsolationConfig: Sendable {
   /// ``ContainerRuntimeConfiguration/diagnostics``. `nil` (the default) records nothing.
   public var diagnostics: StartupDiagnostics?
 
+  /// What the resolved bootstrap can take part in.
+  ///
+  /// Declared alongside the resolved artifact rather than guessed from its path:
+  /// a custom `--bootstrap` script and an image's own entrypoint both declare
+  /// nothing, and keep their existing behavior.
+  public var bootstrapCapabilities: BootstrapCapabilities
+
+  /// Force an exclusive profile-ownership repair for this session.
+  ///
+  /// A one-shot diagnostic control — never a persistent project setting. Selected
+  /// configuration preparation still runs afterwards; this does not bypass it.
+  public var repairProfileOwnership: Bool
+
+  /// Treat the runtime's ownership mapping as characterized even when it does not
+  /// claim to be, so the fast path can be validated on a new runtime.
+  ///
+  /// Experimental. Leave `false` unless you are the one doing the characterizing.
+  public var profileOwnershipFastPathOptIn: Bool
+
   public init(
     image: String,
     profileHomeDir: URL,
@@ -132,7 +170,10 @@ public struct IsolationConfig: Sendable {
     additionalHostMounts: [URL] = [],
     verbose: Bool = false,
     customPTY: Bool = false,
-    diagnostics: StartupDiagnostics? = nil
+    diagnostics: StartupDiagnostics? = nil,
+    bootstrapCapabilities: BootstrapCapabilities = [],
+    repairProfileOwnership: Bool = false,
+    profileOwnershipFastPathOptIn: Bool = false
   ) {
     self.image = image
     self.profileHomeDir = profileHomeDir
@@ -152,5 +193,8 @@ public struct IsolationConfig: Sendable {
     self.verbose = verbose
     self.customPTY = customPTY
     self.diagnostics = diagnostics
+    self.bootstrapCapabilities = bootstrapCapabilities
+    self.repairProfileOwnership = repairProfileOwnership
+    self.profileOwnershipFastPathOptIn = profileOwnershipFastPathOptIn
   }
 }

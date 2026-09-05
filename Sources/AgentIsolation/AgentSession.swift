@@ -53,6 +53,11 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
     var timeoutInSeconds: Int64? = nil
     var hasStarted: Bool = false
     var waited: Bool = false
+    /// Held for the container's whole lifetime and released only after teardown,
+    /// so a repair can never start while this session is still using the profile.
+    var profileLease: FileLock? = nil
+    /// Kept so teardown can withdraw this session's registration.
+    var ownershipCoordinator: ProfileOwnershipCoordinator? = nil
   }
   private let state = Mutex(State())
 
@@ -106,6 +111,181 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
       stdinContinuation.finish()
     }
 
+    guard let coordinator = makeOwnershipCoordinator() else {
+      // Legacy behavior: the bootstrap repairs profile ownership itself on every
+      // start, and nothing waits for a message it cannot produce.
+      let launched = try await launch(entrypoint: entrypointOverride, ownership: nil)
+      commit(launched, lease: nil)
+      return
+    }
+
+    try await startWithOwnershipHandshake(
+      coordinator: coordinator, entrypoint: entrypointOverride)
+  }
+
+  // MARK: - Profile ownership
+
+  /// The coordinator for this session, or `nil` when the ownership fast path does
+  /// not apply.
+  ///
+  /// It applies only when the resolved bootstrap declares the handshake *and* the
+  /// runtime's ownership mapping has been characterized. Either one missing keeps
+  /// the old behavior: the bootstrap repairs ownership on every start, which is
+  /// slower but makes no assumptions about a mapping nobody has measured.
+  private func makeOwnershipCoordinator() -> ProfileOwnershipCoordinator? {
+    guard config.bootstrapCapabilities.contains(.profileOwnershipHandshake) else { return nil }
+    guard let mapping = runtime.profileOwnershipMapping else { return nil }
+    guard mapping.isCharacterized || config.profileOwnershipFastPathOptIn else { return nil }
+    return ProfileOwnershipCoordinator(
+      profileDirectory: config.profileHomeDir.deletingLastPathComponent(),
+      homeDirectory: config.profileHomeDir,
+      mapping: mapping)
+  }
+
+  /// Launch, then settle profile ownership with the guest before anything runs.
+  ///
+  /// The guest reports the identity it actually resolved; only once the host has
+  /// published a record and acknowledged does the guest run preparation scripts or
+  /// the workload. A shared-mode mismatch costs one restart under an exclusive
+  /// lease — a shared lock is never upgraded in place, because every other session
+  /// holding it could be trying to do the same thing at the same moment.
+  private func startWithOwnershipHandshake(
+    coordinator: ProfileOwnershipCoordinator,
+    entrypoint entrypointOverride: [String]?
+  ) async throws {
+    var mode = coordinator.plannedMode(forceRepair: config.repairProfileOwnership)
+    var hasRepaired = mode == .repair
+    if mode == .repair {
+      // A crashed agentc releases its lease but may leave its container running
+      // with this profile still mounted. Repairing underneath it would corrupt a
+      // live session.
+      try await coordinator.assertNoSurvivingSessions(
+        liveContainerIDs: await runtime.liveContainerIDs())
+    }
+    var lease = try coordinator.acquireLease(for: mode)
+
+    while true {
+      let launched: Launched
+      do {
+        launched = try await launch(
+          entrypoint: entrypointOverride, ownership: (coordinator, mode))
+      } catch {
+        lease.release()
+        throw error
+      }
+
+      guard let controlDirectory = launched.controlDirectory else {
+        // Nothing to wait for; behave as the legacy path rather than hanging.
+        commit(launched, lease: lease, coordinator: coordinator)
+        return
+      }
+
+      let report: ProfileOwnershipReport
+      do {
+        // The span covers the guest's whole ownership pass, since the report is
+        // only written once that finishes.
+        report = try await config.diagnostics.span(
+          "profile.ownership", attributes: [.init("mode", mode.rawValue)]
+        ) { context in
+          let report = try await coordinator.awaitReport(controlDirectory: controlDirectory)
+          context?.set("action", report.status.rawValue)
+          context?.set("visited", report.visited)
+          context?.set("changed", report.changed)
+          return report
+        }
+      } catch {
+        try? coordinator.acknowledge(controlDirectory: controlDirectory, decision: .abort)
+        await discard(launched)
+        lease.release()
+        throw error
+      }
+
+      switch report.status {
+      case .verified:
+        try? coordinator.acknowledge(controlDirectory: controlDirectory, decision: .continue)
+        commit(launched, lease: lease, coordinator: coordinator)
+        return
+
+      case .initialized, .repaired:
+        // Publish only after a success, and only then release the guest.
+        if let record = coordinator.makeRecord(from: report) {
+          do {
+            try coordinator.publish(record)
+          } catch {
+            try? coordinator.acknowledge(controlDirectory: controlDirectory, decision: .abort)
+            await discard(launched)
+            lease.release()
+            throw error
+          }
+        }
+        try? coordinator.convertToSharedLease(lease)
+        try? coordinator.acknowledge(controlDirectory: controlDirectory, decision: .continue)
+        commit(launched, lease: lease, coordinator: coordinator)
+        return
+
+      case .needsRepair:
+        try? coordinator.acknowledge(controlDirectory: controlDirectory, decision: .abort)
+        await discard(launched)
+        lease.release()
+        guard !hasRepaired else { throw ProfileOwnershipError.stillNeedsRepair }
+        hasRepaired = true
+        mode = .repair
+        // The record described a state the guest does not see, so it is wrong.
+        coordinator.discardRecord()
+        try await coordinator.assertNoSurvivingSessions(
+          liveContainerIDs: await runtime.liveContainerIDs())
+        lease = try coordinator.acquireLease(for: .repair)
+
+      case .failed:
+        try? coordinator.acknowledge(controlDirectory: controlDirectory, decision: .abort)
+        await discard(launched)
+        lease.release()
+        throw ProfileOwnershipError.repairFailed(report.detail ?? "no detail reported")
+      }
+    }
+  }
+
+  /// Adopt a successful launch as this session's container.
+  private func commit(
+    _ launched: Launched,
+    lease: FileLock?,
+    coordinator: ProfileOwnershipCoordinator? = nil
+  ) {
+    // Recorded before the lease is ever released, so a crash cannot leave a live
+    // container that nothing knows about.
+    coordinator?.registerSession(containerID: launched.container.id)
+    state.withLock { state in
+      state.container = launched.container
+      state.tempDirs = launched.tempDirs
+      state.profileLease = lease
+      state.ownershipCoordinator = coordinator
+    }
+  }
+
+  /// Tear down a launch that will not become this session's container.
+  private func discard(_ launched: Launched) async {
+    try? await launched.container.stop()
+    try? await runtime.removeContainer(launched.container)
+    for dir in launched.tempDirs {
+      try? FileManager.default.removeItem(at: dir)
+    }
+  }
+
+  /// One container launch, before it is adopted or discarded.
+  private struct Launched {
+    var container: Runtime.Container
+    var tempDirs: [URL]
+    /// The host side of this session's control directory, when the ownership
+    /// handshake is in play.
+    var controlDirectory: URL?
+  }
+
+  // MARK: - Launch
+
+  private func launch(
+    entrypoint entrypointOverride: [String]?,
+    ownership: (coordinator: ProfileOwnershipCoordinator, mode: ProfileOwnershipMode)?
+  ) async throws -> Launched {
     // Expand `dependsOn` so dependencies are set up before the configurations
     // that require them, and the container sees the same list the host mounts for.
     // Resolved up front so a broken dependency graph fails before any runtime work.
@@ -254,11 +434,31 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
       break
     }
 
+    // Per-session control directory for the profile-ownership handshake. It is
+    // private to this session and carries only this session's expected ownership
+    // data — never the host state directory, and never its lock.
+    var controlDirectory: URL?
+    if let ownership {
+      let dir = try makeTempDir()
+      tempDirs.append(dir)
+      controlDirectory = dir
+      mounts.append(
+        .init(
+          hostPath: AgentIsolationPathUtils.resolveSymlinksWithPlatformConsiderations(dir).path,
+          containerPath: ProfileOwnershipProtocol.controlMountPath
+        ))
+    }
+
     // Environment: start with user values, excluding reserved bootstrap controls.
     var environment = config.environment.filter { !$0.key.hasPrefix("AGENTC_") }
     environment["AGENTC_CONFIGURATIONS"] = configurations.joined(separator: ",")
     if config.verbose {
       environment["AGENTC_VERBOSE"] = "1"
+    }
+    if let ownership {
+      for (key, value) in ownership.coordinator.guestEnvironment(mode: ownership.mode) {
+        environment[key] = value
+      }
     }
 
     // When an entrypoint override is provided (e.g. "sh" dispatch), the override
@@ -316,10 +516,8 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
           configuration: containerConfig
         )
       }
-      state.withLock { state in
-        state.container = container
-        state.tempDirs = tempDirs
-      }
+      return Launched(
+        container: container, tempDirs: tempDirs, controlDirectory: controlDirectory)
     } catch {
       // Container never came up â purge temp dirs eagerly and finish streams.
       for dir in tempDirs {
@@ -393,15 +591,21 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
 
     try? await runtime.removeContainer(container)
 
-    let dirs = state.withLock { state -> [URL] in
-      let d = state.tempDirs
+    let (dirs, lease, coordinator) = state.withLock {
+      state -> ([URL], FileLock?, ProfileOwnershipCoordinator?) in
+      let result = (state.tempDirs, state.profileLease, state.ownershipCoordinator)
       state.tempDirs = []
       state.container = nil
-      return d
+      state.profileLease = nil
+      state.ownershipCoordinator = nil
+      return result
     }
     for dir in dirs {
       try? FileManager.default.removeItem(at: dir)
     }
+    // Only now, with the container gone, may another session repair this profile.
+    coordinator?.unregisterSession(containerID: container.id)
+    lease?.release()
   }
 
   private func makeTempDir() throws -> URL {

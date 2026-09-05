@@ -64,13 +64,16 @@ enum SessionRunner {
     }
 
     let resolvedImage = options.resolveImage(projectSettings: projectSettings)
-    let bootstrapMode = try await diagnostics.span("cli.bootstrap_resolve") { context in
-      let mode = try await options.resolveBootstrapMode(projectSettings: projectSettings)
-      context?.set("mode", mode.diagnosticLabel)
-      return mode
+    let bootstrap = try await diagnostics.span("cli.bootstrap_resolve") { context in
+      let resolved = try await options.resolveBootstrapMode(projectSettings: projectSettings)
+      context?.set("mode", resolved.mode.diagnosticLabel)
+      context?.set(
+        "ownership_handshake",
+        resolved.capabilities.contains(.profileOwnershipHandshake))
+      return resolved
     }
     let toolkitDir = await diagnostics.span("cli.toolkit_resolve") { context in
-      let dir = await options.resolveToolkitDir(bootstrapMode: bootstrapMode)
+      let dir = await options.resolveToolkitDir(bootstrapMode: bootstrap.mode)
       context?.set("mounted", dir != nil)
       return dir
     }
@@ -83,7 +86,7 @@ enum SessionRunner {
       excludeFolders: excludeFolders,
       configurationsDir: configurationsDir,
       configurations: configNames,
-      bootstrapMode: bootstrapMode,
+      bootstrapMode: bootstrap.mode,
       toolkitDir: toolkitDir,
       arguments: arguments,
       environment: options.resolveEnvironment(projectSettings: projectSettings),
@@ -92,7 +95,10 @@ enum SessionRunner {
       memoryLimitMiB: options.resolveMemoryLimitMiB(projectSettings: projectSettings),
       additionalHostMounts: options.resolveAdditionalMounts(projectSettings: projectSettings),
       verbose: options.verbose,
-      diagnostics: diagnostics
+      diagnostics: diagnostics,
+      bootstrapCapabilities: bootstrap.capabilities,
+      repairProfileOwnership: options.repairProfileOwnership,
+      profileOwnershipFastPathOptIn: options.profileOwnershipFastPath
     )
 
     return try await dispatchToRuntime(
@@ -172,7 +178,13 @@ enum SessionRunner {
       }
     }
     let session = AgentSession(config: config, runtime: runtime)
-    try await session.start(entrypoint: entrypoint)
+    do {
+      try await session.start(entrypoint: entrypoint)
+    } catch let error as ProfileOwnershipError {
+      // Already phrased for a user; wrap it so it prints as an agentc message
+      // rather than a Foundation placeholder.
+      throw AgentcError.profileOwnership(error.description)
+    }
     return try await session.wait()
   }
 }

@@ -166,52 +166,6 @@
         atPath: path, withIntermediateDirectories: true, attributes: nil)
     }
 
-    /// How much work a recursive ownership pass actually did.
-    struct ChownStats {
-      var visited = 0
-      var changed = 0
-    }
-
-    /// Recursively change ownership. Best-effort, errors are silently ignored.
-    ///
-    /// Entries that already have the target ownership are left alone, so `changed`
-    /// reports real writes rather than the size of the tree.
-    @discardableResult
-    static func chownRecursive(_ path: String, uid: uid_t, gid: gid_t) -> ChownStats {
-      var stats = ChownStats()
-      chownIfNeeded(path, uid: uid, gid: gid, stats: &stats)
-      walk(path, uid: uid, gid: gid, stats: &stats)
-      return stats
-    }
-
-    private static func walk(_ path: String, uid: uid_t, gid: gid_t, stats: inout ChownStats) {
-      guard let dp = opendir(path) else { return }
-      defer { closedir(dp) }
-      while let entry = readdir(dp) {
-        var d_name = entry.pointee.d_name
-        let name = withUnsafePointer(to: &d_name) {
-          String(cString: UnsafeRawPointer($0).assumingMemoryBound(to: CChar.self))
-        }
-        if name == "." || name == ".." { continue }
-        let fullPath = "\(path)/\(name)"
-        chownIfNeeded(fullPath, uid: uid, gid: gid, stats: &stats)
-        if Int32(entry.pointee.d_type) == Int32(DT_DIR) {
-          walk(fullPath, uid: uid, gid: gid, stats: &stats)
-        }
-      }
-    }
-
-    private static func chownIfNeeded(
-      _ path: String, uid: uid_t, gid: gid_t, stats: inout ChownStats
-    ) {
-      stats.visited += 1
-      var info = stat()
-      if stat(path, &info) == 0, info.st_uid == uid, info.st_gid == gid { return }
-      if chown(path, uid, gid) == 0 {
-        stats.changed += 1
-      }
-    }
-
     /// Replace the current process with the given command (exec).
     /// Does not return on success.
     static func execReplace(command: [String]) -> Never {

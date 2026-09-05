@@ -103,6 +103,8 @@ enum AgentcError: LocalizedError {
   case runtimeNotAvailable(String)
   case imageManagementNotSupported(String)
   case imageNotFound(String)
+  /// A profile-ownership lifecycle failure, already phrased for a user.
+  case profileOwnership(String)
 
   var errorDescription: String? {
     switch self {
@@ -118,6 +120,8 @@ enum AgentcError: LocalizedError {
       return "agentc: runtime '\(runtime)' does not support image management"
     case .imageNotFound(let reference):
       return "agentc: image '\(reference)' was not found"
+    case .profileOwnership(let message):
+      return "agentc: \(message)"
     }
   }
 }

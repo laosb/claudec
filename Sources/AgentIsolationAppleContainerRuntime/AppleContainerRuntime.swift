@@ -53,6 +53,39 @@
       RootFSCache(imageStorePath: imageStorePath, diagnostics: diagnostics)
     }
 
+    /// How host file ownership presents through Apple's virtiofs share.
+    ///
+    /// `isCharacterized` stays `false` until that has been measured on real
+    /// hardware — specifically, whether a guest `chown` on a shared file takes
+    /// effect, and whether it is still in effect for the next session. Until then
+    /// the bootstrap keeps repairing profile ownership on every start rather than
+    /// trusting a record written against an unverified mapping.
+    public var profileOwnershipMapping: ProfileOwnershipMapping? {
+      ProfileOwnershipMapping(
+        identity: "apple-container/virtiofs", isCharacterized: false)
+    }
+
+    /// Containers this runtime still has state for.
+    ///
+    /// `ContainerManager` keeps one directory per container and removes it on
+    /// `delete`, so a directory that is still there means the session was never
+    /// torn down — which is exactly the crashed-agentc case an ownership repair
+    /// must not run underneath.
+    public func liveContainerIDs() async -> Set<String>? {
+      let root = imageStorePath.appendingPathComponent("containers")
+      guard
+        let entries = try? FileManager.default.contentsOfDirectory(
+          at: root, includingPropertiesForKeys: [.isDirectoryKey])
+      else {
+        // A missing directory means no containers, not "cannot tell".
+        return FileManager.default.fileExists(atPath: root.path) ? nil : []
+      }
+      return Set(
+        entries.filter {
+          (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
+        }.map(\.lastPathComponent))
+    }
+
     // MARK: - ContainerRuntime
 
     public func prepare() async throws {

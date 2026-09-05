@@ -50,6 +50,21 @@ public final class DockerRuntime: ContainerRuntime, Sendable {
     self.warningHandler = config.warningHandler
   }
 
+  /// How bind-mount ownership presents inside a Docker container.
+  ///
+  /// The identity carries the endpoint, because a rootless daemon and a rootful
+  /// one on the same machine map the same host directory to entirely different
+  /// owners, and an ownership record written under one says nothing about the
+  /// other. `isCharacterized` stays `false` until that mapping — including
+  /// user-namespace remapping — has actually been measured across the supported
+  /// daemon configurations; until then the bootstrap keeps repairing ownership on
+  /// every start.
+  public var profileOwnershipMapping: ProfileOwnershipMapping? {
+    ProfileOwnershipMapping(
+      identity: "docker/bind/endpoint=\(endpoint)/runtime=\(configuredRuntime ?? "auto")",
+      isCharacterized: false)
+  }
+
   /// Auto-detect the Docker socket path by checking common locations.
   ///
   /// Search order:

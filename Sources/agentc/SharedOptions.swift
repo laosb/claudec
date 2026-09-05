@@ -154,6 +154,38 @@ struct SharedOptions: ParsableArguments {
   )
   var noRootfsCache: Bool = false
 
+  @Flag(
+    name: .customLong("repair-profile-ownership"),
+    help: ArgumentHelp(
+      "Take exclusive access to the profile and repair its home ownership.",
+      discussion: """
+        Use after importing files into a profile, changing ownership by hand, or \
+        restoring a profile in place — an ownership record cannot detect those. \
+        Selected configuration preparation still runs; this does not bypass it. \
+        Fails with an actionable error if another agentc session is using the \
+        profile. One-shot, never persisted in project settings.
+
+        On a runtime whose ownership fast path is not enabled, every start already \
+        repairs ownership, so this changes nothing beyond taking the profile \
+        exclusively for the duration.
+        """)
+  )
+  var repairProfileOwnership: Bool = false
+
+  @Flag(
+    name: .customLong("profile-ownership-fast-path"),
+    help: ArgumentHelp(
+      "Enable the profile-ownership fast path on a runtime that has not declared it.",
+      discussion: """
+        Experimental. The fast path skips the per-start recursive ownership repair \
+        and relies on a recorded ownership state, which is only sound once the \
+        runtime's mount ownership mapping has been characterized. Use it to do \
+        that characterization, not in day-to-day runs.
+        """,
+      visibility: .hidden)
+  )
+  var profileOwnershipFastPath: Bool = false
+
   @Flag(name: .long, help: "Skip the migration check for legacy ~/.claudec data.")
   var suppressMigrationFromClaudec: Bool = false
 
@@ -255,26 +287,40 @@ extension SharedOptions {
     return ["claude"]
   }
 
+  /// A bootstrap and what it is known to be able to do.
+  struct ResolvedBootstrap {
+    var mode: BootstrapMode
+    var capabilities: BootstrapCapabilities
+  }
+
   /// Resolve the bootstrap mode from CLI flags, project settings, and installed binary.
   ///
   /// Priority: CLI --respect-image-entrypoint → CLI --bootstrap → project settings → installed binary.
-  func resolveBootstrapMode(projectSettings: ProjectSettings? = nil) async throws -> BootstrapMode {
+  ///
+  /// Capabilities are only ever attached to the bootstrap agentc installed itself,
+  /// and only when its recorded digest still matches. A user-supplied `--bootstrap`
+  /// script and an image's own entrypoint declare nothing, so nothing waits on them
+  /// for a protocol they do not implement.
+  func resolveBootstrapMode(projectSettings: ProjectSettings? = nil) async throws
+    -> ResolvedBootstrap
+  {
     if respectImageEntrypoint {
-      return .imageDefault
+      return ResolvedBootstrap(mode: .imageDefault, capabilities: [])
     }
     if let path = bootstrapScript, !path.isEmpty {
-      return .file(URL(fileURLWithPath: path))
+      return ResolvedBootstrap(mode: .file(URL(fileURLWithPath: path)), capabilities: [])
     }
     if let agent = projectSettings?.agent {
       if agent.respectImageEntrypoint == true {
-        return .imageDefault
+        return ResolvedBootstrap(mode: .imageDefault, capabilities: [])
       }
       if let path = agent.bootstrap, !path.isEmpty {
-        return .file(URL(fileURLWithPath: path))
+        return ResolvedBootstrap(mode: .file(URL(fileURLWithPath: path)), capabilities: [])
       }
     }
     let binary = try await BootstrapManager.resolveBootstrapBinary(verbose: verbose)
-    return .file(binary)
+    return ResolvedBootstrap(
+      mode: .file(binary), capabilities: BootstrapManager.capabilities(of: binary))
   }
 
   /// Resolve the agentc Toolkit directory to mount, or `nil` to mount none.

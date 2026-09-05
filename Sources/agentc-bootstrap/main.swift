@@ -21,6 +21,11 @@
   do {
     if getuid() == 0 {
       try RootSetup.perform()
+      // Settle profile ownership before anything else runs. When the host speaks
+      // the ownership protocol this blocks until it acknowledges, so no
+      // preparation script and no workload can start against a profile whose
+      // ownership has not been established.
+      try ProfileOwnership.settle()
       try Privileges.drop(to: "agent")
     }
 

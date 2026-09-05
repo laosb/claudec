@@ -2,11 +2,22 @@
   import FoundationEssentials
   import Musl
 
+  /// The privileged half of the bootstrap: everything that has to happen before
+  /// the process drops to the agent user.
+  ///
+  /// Split into three separable pieces — account creation, small directory
+  /// initialization, and profile ownership — because only the last of them is
+  /// expensive, and only the last of them has to negotiate with the host.
+  /// ``ProfileOwnership`` handles that separately.
   enum RootSetup {
+    /// Create the agent account and the directories the container needs.
+    ///
+    /// Deliberately does *not* touch the profile home: ownership is settled
+    /// afterwards, once the host has said what it expects.
     static func perform() throws {
       try Diagnostics.span("bootstrap.agent_user") { try createAgentUser() }
       Diagnostics.span("bootstrap.sudo") { configureSudo() }
-      createDirectories()
+      Diagnostics.span("bootstrap.directories") { createDirectories() }
     }
 
     private static func createAgentUser() throws {
@@ -42,26 +53,17 @@
       chmod("/etc/sudoers.d/agent", 0o440)
     }
 
+    /// Create the small, fixed set of container-owned directories.
+    ///
+    /// These are container paths, not profile contents, so they are cheap and
+    /// unconditional. `/home/agent` is left to ``ProfileOwnership``.
     private static func createDirectories() {
       Helpers.mkdirp("/workspace")
       Helpers.mkdirp("/agent-isolation")
 
-      guard let pw = getpwnam("agent") else { return }
-      let uid = pw.pointee.pw_uid
-      let gid = pw.pointee.pw_gid
-      chown("/workspace", uid, gid)
-      chown("/agent-isolation", uid, gid)
-
-      let start = Diagnostics.now()
-      let result = Helpers.chownRecursive("/home/agent", uid: uid, gid: gid)
-      Diagnostics.record(
-        phase: "bootstrap.profile_ownership",
-        startedAt: start,
-        attributes: [
-          ("action", "recursive"),
-          ("visited", String(result.visited)),
-          ("changed", String(result.changed)),
-        ])
+      guard let identity = ProfileOwnership.resolveAgentIdentity() else { return }
+      chown("/workspace", identity.uid, identity.gid)
+      chown("/agent-isolation", identity.uid, identity.gid)
     }
   }
 #endif

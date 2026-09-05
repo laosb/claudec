@@ -60,10 +60,32 @@ public protocol ContainerRuntime: Sendable {
   /// The default implementation is a no-op. Runtimes that hold persistent connections
   /// or other resources should override this to perform proper cleanup.
   func shutdown() async throws
+
+  /// How this runtime maps host file ownership into the container, if that has
+  /// been characterized.
+  ///
+  /// `nil` — the default — keeps the profile-ownership fast path off. A runtime
+  /// that silently ignores `chown`, or reports success without changing anything,
+  /// would let an ownership record claim a profile is fine when it is not, so a
+  /// runtime opts in only once its mapping has actually been measured.
+  var profileOwnershipMapping: ProfileOwnershipMapping? { get }
+
+  /// IDs of containers this runtime still has registered, or `nil` when it cannot
+  /// enumerate them.
+  ///
+  /// Used to notice a container that outlived the agentc process that started it:
+  /// after a crash the process lock is gone, but the container may still have the
+  /// profile mounted, and repairing ownership underneath it would corrupt a live
+  /// session. A released lock alone is not proof the profile is idle.
+  func liveContainerIDs() async -> Set<String>?
 }
 
 extension ContainerRuntime {
   public func shutdown() async throws {}
+
+  public var profileOwnershipMapping: ProfileOwnershipMapping? { nil }
+
+  public func liveContainerIDs() async -> Set<String>? { nil }
 }
 
 public struct ContainerRuntimeConfiguration: Sendable {
