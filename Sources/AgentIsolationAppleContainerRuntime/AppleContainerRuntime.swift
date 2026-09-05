@@ -18,7 +18,16 @@
     public typealias Image = AppleContainerImage
     public typealias Container = AppleContainerContainer
 
+    /// Capacity requested for every session rootfs. Part of the cache key, so
+    /// changing it invalidates existing entries rather than reusing a smaller disk.
+    static let rootfsCapacityBytes: UInt64 = UInt64(8).gib()
+
+    /// Describes the ext4 the unpacker is asked to produce. Part of the cache key.
+    static let ext4FormattingOptions = "journal=none"
+
     private let storagePath: URL
+    private let diagnostics: StartupDiagnostics?
+    private let rootfsCacheEnabled: Bool
     private var manager: ContainerManager?
     private var imageStore: ImageStore?
 
@@ -30,6 +39,18 @@
 
     public required init(config: ContainerRuntimeConfiguration) {
       self.storagePath = URL(fileURLWithPath: config.storagePath)
+      self.diagnostics = config.diagnostics
+      self.rootfsCacheEnabled = config.rootfsCacheEnabled
+    }
+
+    /// Where the image store — and with it the rootfs cache and session
+    /// directories — lives.
+    private var imageStorePath: URL {
+      storagePath.appendingPathComponent("imagestore")
+    }
+
+    private var rootFSCache: RootFSCache {
+      RootFSCache(imageStorePath: imageStorePath, diagnostics: diagnostics)
     }
 
     // MARK: - ContainerRuntime
@@ -91,7 +112,12 @@
         throw AppleContainerRuntimeError.notPrepared
       }
       let resolvedRef = Self.normalizedDockerHubRef(ref)
+      // Resolve the digest before deleting, so cached rootfs entries unpacked from
+      // this image can be dropped too. Sessions that already cloned one keep
+      // running: their disks are independent files.
+      let digest = try? await store.get(reference: resolvedRef).digest
       try await store.delete(reference: resolvedRef, performCleanup: true)
+      if let digest { rootFSCache.invalidate(imageDigest: digest) }
     }
 
     public func removeImage(digest: String) async throws {
@@ -99,6 +125,7 @@
         throw AppleContainerRuntimeError.notPrepared
       }
       try await store.delete(reference: digest, performCleanup: true)
+      rootFSCache.invalidate(imageDigest: digest)
     }
 
     // MARK: - ManagedImageRuntime
@@ -132,13 +159,15 @@
       } else {
         candidate = Self.normalizedDockerHubRef(ref)
       }
+      let digest = try? await store.get(reference: candidate).digest
       try await store.delete(reference: candidate, performCleanup: true)
+      if let digest { rootFSCache.invalidate(imageDigest: digest) }
     }
 
     private func managedImageStore() throws -> ImageStore {
       if let imageStore { return imageStore }
       try FileManager.default.createDirectory(at: storagePath, withIntermediateDirectories: true)
-      let store = try ImageStore(path: storagePath.appendingPathComponent("imagestore"))
+      let store = try ImageStore(path: imageStorePath)
       imageStore = store
       return store
     }
@@ -202,62 +231,112 @@
 
       let resolvedRef = Self.normalizedDockerHubRef(imageRef)
 
-      let container = try await manager.create(
-        containerID,
-        reference: resolvedRef,
-        rootfsSizeInBytes: UInt64(8).gib()
-      ) { containerConfig in
-        containerConfig.cpus = configuration.cpuCount
-        containerConfig.memoryInBytes = UInt64(configuration.memoryLimitMiB).mib()
-
-        containerConfig.hosts = .default
-        containerConfig.useInit = true
-
-        // Entrypoint
-        if !configuration.entrypoint.isEmpty {
-          containerConfig.process.arguments = configuration.entrypoint
-        }
-
-        // Working directory
-        if let workDir = configuration.workingDirectory {
-          containerConfig.process.workingDirectory = workDir
-        }
-
-        // Environment: image defaults, with our values overriding matching names.
-        containerConfig.process.environmentVariables = AppleContainerEnvironment.merged(
-          imageDefaults: containerConfig.process.environmentVariables,
-          overrides: configuration.environment
-        )
-
-        // Mounts
-        for mount in configuration.mounts {
-          containerConfig.mounts.append(
-            .share(
-              source: mount.hostPath,
-              destination: mount.containerPath
-            ))
-        }
-
-        // I/O
-        switch configuration.io {
-        case .currentTerminal:
-          if let t = terminal {
-            containerConfig.process.setTerminalIO(terminal: t)
-          }
-        case .standardIO:
-          containerConfig.process.stdin = FileDescriptorReader(.standardInput)
-          containerConfig.process.stdout = FileDescriptorWriter(.standardOutput)
-          containerConfig.process.stderr = FileDescriptorWriter(.standardError)
-        case .custom(let stdin, let stdout, let stderr, let isTerminal):
-          containerConfig.process.terminal = isTerminal
-          containerConfig.process.stdin = ContainerizationReaderStream(stdin)
-          containerConfig.process.stdout = ContainerizationWriter(stdout)
-          containerConfig.process.stderr = ContainerizationWriter(stderr)
-        }
+      // Resolve the image exactly once and use that object for both the rootfs and
+      // the container configuration, so a tag update racing this launch can never
+      // pair one image's filesystem with another image's config.
+      let store = manager.imageStore
+      let resolvedImage = try await diagnostics.span("image.resolve") { context in
+        let image = try await store.get(reference: resolvedRef, pull: true)
+        context?.set("digest", image.digest)
+        return image
       }
 
-      try await container.create()
-      try await container.start()
+      let sessionDirectory =
+        imageStorePath
+        .appendingPathComponent("containers")
+        .appendingPathComponent(containerID)
+      let sessionRootfs = sessionDirectory.appendingPathComponent("rootfs.ext4")
+
+      // The existing-rootfs `create` overload does not create this directory, but
+      // it still writes the boot log into it and `delete` still removes it.
+      try FileManager.default.createDirectory(
+        at: sessionDirectory, withIntermediateDirectories: true)
+
+      let rootfsMount: Mount
+      do {
+        rootfsMount = try await materializeRootFS(
+          image: resolvedImage, reference: resolvedRef, at: sessionRootfs)
+      } catch {
+        terminal?.tryReset()
+        try? FileManager.default.removeItem(at: sessionDirectory)
+        throw error
+      }
+
+      let container: LinuxContainer
+      do {
+        container = try await manager.create(
+          containerID,
+          image: resolvedImage,
+          rootfs: rootfsMount
+        ) { containerConfig in
+          containerConfig.cpus = configuration.cpuCount
+          containerConfig.memoryInBytes = UInt64(configuration.memoryLimitMiB).mib()
+
+          containerConfig.hosts = .default
+          containerConfig.useInit = true
+
+          // Entrypoint
+          if !configuration.entrypoint.isEmpty {
+            containerConfig.process.arguments = configuration.entrypoint
+          }
+
+          // Working directory
+          if let workDir = configuration.workingDirectory {
+            containerConfig.process.workingDirectory = workDir
+          }
+
+          // Environment: image defaults, with our values overriding matching names.
+          containerConfig.process.environmentVariables = AppleContainerEnvironment.merged(
+            imageDefaults: containerConfig.process.environmentVariables,
+            overrides: configuration.environment
+          )
+
+          // Mounts
+          for mount in configuration.mounts {
+            containerConfig.mounts.append(
+              .share(
+                source: mount.hostPath,
+                destination: mount.containerPath
+              ))
+          }
+
+          // I/O
+          switch configuration.io {
+          case .currentTerminal:
+            if let t = terminal {
+              containerConfig.process.setTerminalIO(terminal: t)
+            }
+          case .standardIO:
+            containerConfig.process.stdin = FileDescriptorReader(.standardInput)
+            containerConfig.process.stdout = FileDescriptorWriter(.standardOutput)
+            containerConfig.process.stderr = FileDescriptorWriter(.standardError)
+          case .custom(let stdin, let stdout, let stderr, let isTerminal):
+            containerConfig.process.terminal = isTerminal
+            containerConfig.process.stdin = ContainerizationReaderStream(stdin)
+            containerConfig.process.stdout = ContainerizationWriter(stdout)
+            containerConfig.process.stderr = ContainerizationWriter(stderr)
+          }
+        }
+      } catch {
+        // Nothing was created, so there is no VM to stop — just take the session's
+        // files back out and restore the terminal.
+        terminal?.tryReset()
+        try? manager.releaseNetwork(containerID)
+        try? FileManager.default.removeItem(at: sessionDirectory)
+        throw error
+      }
+
+      do {
+        try await diagnostics.span("container.create") { _ in try await container.create() }
+        try await diagnostics.span("container.start") { _ in try await container.start() }
+      } catch {
+        // A VM may already exist by now. Stop it before deleting its disk: pulling
+        // the rootfs out from under a live VM is far worse than a leaked file.
+        try? await container.stop()
+        terminal?.tryReset()
+        try? manager.delete(containerID)
+        throw error
+      }
 
       if let t = terminal {
         try? await container.resize(to: try t.size)
@@ -269,6 +348,76 @@
         manager: manager,
         terminal: terminal
       )
+    }
+
+    // MARK: - Root filesystem
+
+    /// Produce this session's writable rootfs.
+    ///
+    /// With the cache enabled the image is unpacked at most once per identity and
+    /// each session gets an independent clone or copy of it. With the cache
+    /// disabled the image is unpacked straight into the session. Either way the
+    /// session's disk is its own file and is destroyed on exit — no rootfs is ever
+    /// carried over to the next launch.
+    private func materializeRootFS(
+      image: Containerization.Image,
+      reference: String,
+      at sessionRootfs: URL
+    ) async throws -> Mount {
+      let capacity = Self.rootfsCapacityBytes
+
+      let unpack: (URL) async throws -> Void = { destination in
+        let unpacker = EXT4Unpacker(blockSizeInBytes: capacity)
+        _ = try await unpacker.unpack(image, for: .current, at: destination, progress: nil)
+      }
+
+      guard rootfsCacheEnabled else {
+        try await diagnostics.span("rootfs.materialize") { context in
+          context?.set("cache", "disabled")
+          context?.set("source", RootFSMaterialization.Source.uncached.rawValue)
+          try await unpack(sessionRootfs)
+          try? FileManager.default.setAttributes(
+            [.posixPermissions: 0o600], ofItemAtPath: sessionRootfs.path)
+        }
+        return Self.blockMount(at: sessionRootfs)
+      }
+
+      let platform = Platform.current
+      let descriptor = try await image.descriptor(for: platform)
+      let identity = RootFSCacheIdentity(
+        platformManifestDigest: descriptor.digest,
+        os: platform.os,
+        architecture: platform.architecture,
+        variant: platform.variant,
+        rootfsCapacityBytes: capacity,
+        ext4FormattingOptions: Self.ext4FormattingOptions
+      )
+
+      let cache = rootFSCache
+      let result = try await diagnostics.span("rootfs.materialize") { context in
+        let result = try await cache.materialize(
+          identity: identity,
+          imageReference: reference,
+          imageDigest: image.digest,
+          sessionRootfs: sessionRootfs,
+          unpack: unpack)
+        context?.set("source", result.source.rawValue)
+        if let method = result.method { context?.set("method", method.rawValue) }
+        if let reason = result.bypassReason { context?.set("bypass", String(reason.prefix(200))) }
+        return result
+      }
+
+      // Eviction runs after the session already has its disk, so it can never
+      // delay a launch, and it only ever touches entries nothing holds a lock on.
+      if result.source == .cacheMiss {
+        cache.prune()
+      }
+
+      return Self.blockMount(at: sessionRootfs)
+    }
+
+    private static func blockMount(at path: URL) -> Mount {
+      .block(format: "ext4", source: path.path, destination: "/", options: [])
     }
 
     public func shutdown() async throws {

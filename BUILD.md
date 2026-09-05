@@ -148,3 +148,7 @@ agentc Toolkit                            curl, jq, ripgrep, CA bundle
 ```
 
 `AgentIsolation` depends only on Foundation and `swift-crypto`; runtime-specific dependencies are isolated behind Swift package traits.
+
+## Startup performance
+
+Startup is instrumented behind `--verbose`, and the Apple Containerization backend caches unpacked image root filesystems so repeat launches skip the unpack while still getting a fresh, disposable rootfs. See [Startup Performance](./docs/startup-performance.md) for the phase list, the cache layout and its maintenance, the `--no-rootfs-cache` rollback switch, and how to benchmark with [`scripts/benchmark-startup.sh`](./scripts/benchmark-startup.sh).

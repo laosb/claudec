@@ -88,18 +88,28 @@ public struct ContainerRuntimeConfiguration: Sendable {
   /// instrumentation entirely; conforming runtimes must behave identically either way.
   public var diagnostics: StartupDiagnostics?
 
+  /// Whether the runtime may reuse an unpacked image rootfs between sessions.
+  ///
+  /// Only ``AgentIsolationAppleContainerRuntime`` acts on this; Docker manages its
+  /// own image storage. Turning it off is a diagnostic and rollback switch — every
+  /// session gets a fresh, independent writable rootfs either way, and this only
+  /// controls whether the *unpacked image* is reused between them.
+  public var rootfsCacheEnabled: Bool
+
   public init(
     storagePath: String,
     endpoint: String? = nil,
     ociRuntime: String? = nil,
     warningHandler: (@Sendable (String) -> Void)? = nil,
-    diagnostics: StartupDiagnostics? = nil
+    diagnostics: StartupDiagnostics? = nil,
+    rootfsCacheEnabled: Bool = true
   ) {
     self.storagePath = storagePath
     self.endpoint = endpoint
     self.ociRuntime = ociRuntime
     self.warningHandler = warningHandler
     self.diagnostics = diagnostics
+    self.rootfsCacheEnabled = rootfsCacheEnabled
   }
 }
 

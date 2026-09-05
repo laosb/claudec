@@ -123,7 +123,8 @@ enum SessionRunner {
         // stderr, so the warning never lands in output the agent's caller is parsing.
         writeToStderr("\nagentc: \(message)\n\n")
       },
-      diagnostics: diagnostics)
+      diagnostics: diagnostics,
+      rootfsCacheEnabled: !options.noRootfsCache)
 
     let choice = RuntimeChoice.resolve(explicit: options.runtime)
     return switch choice {

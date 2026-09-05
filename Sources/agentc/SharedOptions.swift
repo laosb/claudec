@@ -141,6 +141,19 @@ struct SharedOptions: ParsableArguments {
     help: "Container memory limit in MiB (default: 1536).")
   var memoryLimitMiB: Int?
 
+  @Flag(
+    name: .customLong("no-rootfs-cache"),
+    help: ArgumentHelp(
+      "Unpack the image again for this session instead of reusing a cached rootfs.",
+      discussion: """
+        A diagnostic and rollback switch for the Apple Containerization runtime; \
+        Docker manages its own image storage and ignores it. Every session gets a \
+        fresh, independent writable rootfs either way — this only controls whether \
+        the unpacked image is reused between them. Never persisted in project settings.
+        """)
+  )
+  var noRootfsCache: Bool = false
+
   @Flag(name: .long, help: "Skip the migration check for legacy ~/.claudec data.")
   var suppressMigrationFromClaudec: Bool = false
 
