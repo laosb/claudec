@@ -48,6 +48,16 @@ swift test \
   --filter 'AgentIsolationTests|AgentIsolationDockerRuntimeTests'
 ```
 
+The rootfs-cache tests do not need Containerization and run on Linux too, but only
+when the Apple runtime target is linked in — add its trait to pick them up:
+
+```sh
+swift test \
+  --disable-default-traits \
+  --traits ContainerRuntimeAppleContainer,ContainerRuntimeDocker \
+  --skip AgentcIntegrationTests
+```
+
 On macOS, enable both runtime traits when working on Apple Containerization code:
 
 ```sh
