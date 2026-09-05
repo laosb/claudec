@@ -36,6 +36,13 @@ enum SessionRunner {
     // Check for legacy claudec data before proceeding
     try MigrationCheck.checkIfNeeded(suppress: options.suppressMigrationFromClaudec)
 
+    // Diagnostics go to stderr only, so they can never land in output the agent's
+    // caller is parsing. Non-verbose runs record nothing at all.
+    let diagnostics: StartupDiagnostics? =
+      options.verbose
+      ? StartupDiagnostics(emit: StartupDiagnostics.stderrSink(write: { writeToStderr($0) }))
+      : nil
+
     let projectSettings = options.loadProjectSettings()
 
     let (_, profileDir) = options.resolveProfile(projectSettings: projectSettings)
@@ -48,15 +55,25 @@ enum SessionRunner {
     let excludeFolders = options.resolveExcludeFolders(projectSettings: projectSettings)
 
     // Ensure configurations repo
-    try await ConfigurationsManager.ensureRepo(
-      at: configurationsDir,
-      repoURL: options.configurationsRepo,
-      updateInterval: options.configurationsUpdateInterval
-    )
+    try await diagnostics.span("cli.configurations_repo") { _ in
+      try await ConfigurationsManager.ensureRepo(
+        at: configurationsDir,
+        repoURL: options.configurationsRepo,
+        updateInterval: options.configurationsUpdateInterval
+      )
+    }
 
     let resolvedImage = options.resolveImage(projectSettings: projectSettings)
-    let bootstrapMode = try await options.resolveBootstrapMode(projectSettings: projectSettings)
-    let toolkitDir = await options.resolveToolkitDir(bootstrapMode: bootstrapMode)
+    let bootstrapMode = try await diagnostics.span("cli.bootstrap_resolve") { context in
+      let mode = try await options.resolveBootstrapMode(projectSettings: projectSettings)
+      context?.set("mode", mode.diagnosticLabel)
+      return mode
+    }
+    let toolkitDir = await diagnostics.span("cli.toolkit_resolve") { context in
+      let dir = await options.resolveToolkitDir(bootstrapMode: bootstrapMode)
+      context?.set("mounted", dir != nil)
+      return dir
+    }
 
     let isolationConfig = IsolationConfig(
       image: resolvedImage,
@@ -74,12 +91,13 @@ enum SessionRunner {
       cpuCount: options.resolveCpuCount(projectSettings: projectSettings),
       memoryLimitMiB: options.resolveMemoryLimitMiB(projectSettings: projectSettings),
       additionalHostMounts: options.resolveAdditionalMounts(projectSettings: projectSettings),
-      verbose: options.verbose
+      verbose: options.verbose,
+      diagnostics: diagnostics
     )
 
     return try await dispatchToRuntime(
       options: options, config: isolationConfig, entrypoint: entrypoint,
-      projectSettings: projectSettings)
+      projectSettings: projectSettings, diagnostics: diagnostics)
   }
 
   // MARK: - Runtime dispatch
@@ -88,7 +106,8 @@ enum SessionRunner {
     options: SharedOptions,
     config: IsolationConfig,
     entrypoint: [String]?,
-    projectSettings: ProjectSettings?
+    projectSettings: ProjectSettings?,
+    diagnostics: StartupDiagnostics?
   ) async throws -> Int32 {
     let storagePath =
       FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)
@@ -103,7 +122,8 @@ enum SessionRunner {
       warningHandler: { message in
         // stderr, so the warning never lands in output the agent's caller is parsing.
         writeToStderr("\nagentc: \(message)\n\n")
-      })
+      },
+      diagnostics: diagnostics)
 
     let choice = RuntimeChoice.resolve(explicit: options.runtime)
     return switch choice {

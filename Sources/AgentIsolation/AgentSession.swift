@@ -133,7 +133,11 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
       }
     }
 
-    try await runtime.prepare()
+    if let diagnostics = config.diagnostics {
+      try await diagnostics.span("runtime.prepare") { _ in try await runtime.prepare() }
+    } else {
+      try await runtime.prepare()
+    }
 
     try FileManager.default.createDirectory(
       at: config.profileHomeDir,
@@ -298,10 +302,20 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
     )
 
     do {
-      let container = try await runtime.runContainer(
-        imageRef: config.image,
-        configuration: containerConfig
-      )
+      let container: Runtime.Container
+      if let diagnostics = config.diagnostics {
+        container = try await diagnostics.span(
+          "session.run_container",
+          attributes: [.init("mounts", String(mounts.count))]
+        ) { _ in
+          try await runtime.runContainer(imageRef: config.image, configuration: containerConfig)
+        }
+      } else {
+        container = try await runtime.runContainer(
+          imageRef: config.image,
+          configuration: containerConfig
+        )
+      }
       state.withLock { state in
         state.container = container
         state.tempDirs = tempDirs

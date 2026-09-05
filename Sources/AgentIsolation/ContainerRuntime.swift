@@ -84,16 +84,22 @@ public struct ContainerRuntimeConfiguration: Sendable {
   /// go. When `nil`, the runtime falls back to its logger.
   public var warningHandler: (@Sendable (String) -> Void)?
 
+  /// Optional sink for startup phase measurements. `nil` (the default) disables
+  /// instrumentation entirely; conforming runtimes must behave identically either way.
+  public var diagnostics: StartupDiagnostics?
+
   public init(
     storagePath: String,
     endpoint: String? = nil,
     ociRuntime: String? = nil,
-    warningHandler: (@Sendable (String) -> Void)? = nil
+    warningHandler: (@Sendable (String) -> Void)? = nil,
+    diagnostics: StartupDiagnostics? = nil
   ) {
     self.storagePath = storagePath
     self.endpoint = endpoint
     self.ociRuntime = ociRuntime
     self.warningHandler = warningHandler
+    self.diagnostics = diagnostics
   }
 }
 

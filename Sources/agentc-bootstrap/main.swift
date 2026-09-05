@@ -13,6 +13,11 @@
 
   let args = Array(CommandLine.arguments.dropFirst())
 
+  // Recorded immediately before the exec that replaces this process, so the span
+  // covers everything the bootstrap itself does — never the workload that follows.
+  let bootstrapStartedAt = Diagnostics.now()
+  BootstrapTiming.startedAt = bootstrapStartedAt
+
   do {
     if getuid() == 0 {
       try RootSetup.perform()
@@ -21,6 +26,8 @@
 
     try ConfigurationRunner.run(arguments: args)
   } catch {
+    Diagnostics.record(
+      phase: "bootstrap.total", startedAt: bootstrapStartedAt, outcome: "failure")
     fputs("agentc-bootstrap: \(error)\n", stderr)
     exit(1)
   }

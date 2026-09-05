@@ -4,8 +4,8 @@
 
   enum RootSetup {
     static func perform() throws {
-      try createAgentUser()
-      configureSudo()
+      try Diagnostics.span("bootstrap.agent_user") { try createAgentUser() }
+      Diagnostics.span("bootstrap.sudo") { configureSudo() }
       createDirectories()
     }
 
@@ -51,7 +51,17 @@
       let gid = pw.pointee.pw_gid
       chown("/workspace", uid, gid)
       chown("/agent-isolation", uid, gid)
-      Helpers.chownRecursive("/home/agent", uid: uid, gid: gid)
+
+      let start = Diagnostics.now()
+      let result = Helpers.chownRecursive("/home/agent", uid: uid, gid: gid)
+      Diagnostics.record(
+        phase: "bootstrap.profile_ownership",
+        startedAt: start,
+        attributes: [
+          ("action", "recursive"),
+          ("visited", String(result.visited)),
+          ("changed", String(result.changed)),
+        ])
     }
   }
 #endif

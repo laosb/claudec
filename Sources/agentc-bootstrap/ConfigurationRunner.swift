@@ -60,11 +60,15 @@
               "==> Running prepare.sh for configuration '\(configName)'...\n",
               stderr)
           }
-          if access(prepareScript, X_OK) == 0 {
-            try Helpers.run(command: prepareScript, arguments: [], output: .stderr)
-          } else {
-            let shell = access("/bin/bash", X_OK) == 0 ? "/bin/bash" : "/bin/sh"
-            try Helpers.run(command: shell, arguments: [prepareScript], output: .stderr)
+          try Diagnostics.span(
+            "bootstrap.prepare_script", attributes: [("configuration", configName)]
+          ) {
+            if access(prepareScript, X_OK) == 0 {
+              try Helpers.run(command: prepareScript, arguments: [], output: .stderr)
+            } else {
+              let shell = access("/bin/bash", X_OK) == 0 ? "/bin/bash" : "/bin/sh"
+              try Helpers.run(command: shell, arguments: [prepareScript], output: .stderr)
+            }
           }
         }
 
@@ -90,6 +94,7 @@
         if cmd[0] == "/bin/bash" && access("/bin/bash", X_OK) != 0 {
           cmd[0] = "/bin/sh"
         }
+        recordTotal(configurations: configurations, entrypoint: "override")
         Helpers.execReplace(command: cmd)
       }
 
@@ -104,7 +109,20 @@
       if finalEntrypoint[0] == "/bin/bash" && access("/bin/bash", X_OK) != 0 {
         finalEntrypoint[0] = "/bin/sh"
       }
+      recordTotal(configurations: configurations, entrypoint: "configuration")
       Helpers.execReplace(command: finalEntrypoint + arguments)
+    }
+
+    /// Close the whole-bootstrap span immediately before `exec` hands the process
+    /// to the workload, so the measurement never includes the workload itself.
+    private static func recordTotal(configurations: [String], entrypoint: String) {
+      Diagnostics.record(
+        phase: "bootstrap.total",
+        startedAt: BootstrapTiming.startedAt,
+        attributes: [
+          ("configurations", configurations.joined(separator: ",")),
+          ("entrypoint", entrypoint),
+        ])
     }
 
     // MARK: - Dependency resolution

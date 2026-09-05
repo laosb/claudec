@@ -13,6 +13,17 @@ public enum BootstrapMode: Sendable {
 
   /// Respect the container image's built-in entrypoint; do not mount a bootstrap.
   case imageDefault
+
+  /// A short, path-free label for diagnostics.
+  ///
+  /// The bootstrap path can name a user's directories, so only the mode itself is
+  /// reported — diagnostics must never leak filesystem layout.
+  public var diagnosticLabel: String {
+    switch self {
+    case .file: "file"
+    case .imageDefault: "image-default"
+    }
+  }
 }
 
 /// Determines how host-backed mount destinations are represented in the container.
@@ -99,6 +110,10 @@ public struct IsolationConfig: Sendable {
   /// ``AgentSession/write(_:)`` / ``AgentSession/resize(cols:rows:)`` throw.
   public var customPTY: Bool
 
+  /// Optional sink for startup phase measurements, mirroring
+  /// ``ContainerRuntimeConfiguration/diagnostics``. `nil` (the default) records nothing.
+  public var diagnostics: StartupDiagnostics?
+
   public init(
     image: String,
     profileHomeDir: URL,
@@ -116,7 +131,8 @@ public struct IsolationConfig: Sendable {
     memoryLimitMiB: Int = 1536,
     additionalHostMounts: [URL] = [],
     verbose: Bool = false,
-    customPTY: Bool = false
+    customPTY: Bool = false,
+    diagnostics: StartupDiagnostics? = nil
   ) {
     self.image = image
     self.profileHomeDir = profileHomeDir
@@ -135,5 +151,6 @@ public struct IsolationConfig: Sendable {
     self.additionalHostMounts = additionalHostMounts
     self.verbose = verbose
     self.customPTY = customPTY
+    self.diagnostics = diagnostics
   }
 }
