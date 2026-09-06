@@ -7,6 +7,8 @@
     import Darwin
   #elseif canImport(Glibc)
     import Glibc
+  #elseif canImport(Musl)
+    import Musl
   #endif
 
   /// `ReaderStream` backed by a `FileDescriptor` (e.g. stdin).

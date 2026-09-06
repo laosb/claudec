@@ -4,6 +4,8 @@ import Foundation
   import Darwin
 #elseif canImport(Glibc)
   import Glibc
+#elseif canImport(Musl)
+  import Musl
 #endif
 
 /// How a session rootfs was produced from a cached template.

@@ -6,6 +6,8 @@ import Foundation
   import Darwin
 #elseif canImport(Glibc)
   import Glibc
+#elseif canImport(Musl)
+  import Musl
 #endif
 
 // MARK: - Identity

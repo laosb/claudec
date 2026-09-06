@@ -113,8 +113,17 @@ BUILD_VERSION="${BUILD_VERSION:-dev}"
 BUILD_VERSION="${BUILD_VERSION#v}"  # strip leading 'v' from git tags
 BUILD_GIT_SHA="${BUILD_GIT_SHA:-$(git -C "${SCRIPT_DIR}" rev-parse --short HEAD 2>/dev/null || echo "unknown")}"
 BUILD_GIT_SHA="${BUILD_GIT_SHA:0:7}"  # use short SHA
+restore_buildinfo() {
+    [[ -n "${BUILDINFO_ORIGINAL}" ]] || return 0
+    printf '%s\n' "${BUILDINFO_ORIGINAL}" > "${BUILDINFO_FILE}"
+    BUILDINFO_ORIGINAL=""
+}
+
 if [[ "${BUILD_VERSION}" != "dev" || "${BUILD_GIT_SHA}" != "unknown" ]]; then
     BUILDINFO_ORIGINAL=$(cat "${BUILDINFO_FILE}")
+    # Restore on any exit, not just a successful one: a failed build that leaves the
+    # injected values in place would have the next build capture them as the original.
+    trap restore_buildinfo EXIT
     cat > "${BUILDINFO_FILE}" <<SWIFT
 enum BuildInfo {
   static let version = "${BUILD_VERSION}"
@@ -135,9 +144,8 @@ fi
 swift build "${BUILD_ARGS[@]}"
 
 # Restore generated Swift files
-if [[ -n "${BUILDINFO_ORIGINAL}" ]]; then
-    echo "${BUILDINFO_ORIGINAL}" > "${BUILDINFO_FILE}"
-fi
+restore_buildinfo
+trap - EXIT
 
 if [[ -n "${SWIFT_SDK}" ]]; then
     BUILD_DIR="${SCRIPT_DIR}/.build/${SWIFT_SDK}/${CONFIG}"

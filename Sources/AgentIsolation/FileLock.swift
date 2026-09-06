@@ -8,6 +8,8 @@
   import Darwin
 #elseif canImport(Glibc)
   import Glibc
+#elseif canImport(Musl)
+  import Musl
 #endif
 
 /// An advisory interprocess lock held on a lock file.
