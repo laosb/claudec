@@ -219,6 +219,25 @@ struct ProfileOwnershipLeaseTests {
     }
   }
 
+  @Test("Repair rides out a holder that is on its way out")
+  func repairWaitsOutADepartingHolder() throws {
+    let profile = try TempProfile()
+    let coordinator = makeCoordinator(profile)
+    // Stands in for a child that inherited this session's shared lease and has not
+    // reached its exec yet: the lease is genuinely held, but only for a moment, and
+    // no user could act on being told to exit the session holding it.
+    let departing = try coordinator.acquireLease(for: .verify)
+    // A detached thread rather than a `Task`: the probe loop blocks its thread, so
+    // a cooperative-pool release could be waiting behind the very loop it unblocks.
+    Thread.detachNewThread {
+      Thread.sleep(forTimeInterval: 0.1)
+      departing.release()
+    }
+
+    let lease = try coordinator.acquireLease(for: .repair)
+    lease.release()
+  }
+
   @Test("The busy error names the profile and says what to do")
   func busyErrorIsActionable() throws {
     let profile = try TempProfile()
@@ -586,7 +605,17 @@ struct AgentSessionProfileOwnershipTests {
     #expect(try FileLock.tryAcquire(at: coordinator.leaseURL, mode: .exclusive) == nil)
 
     _ = try await session.wait()
-    let after = try FileLock.tryAcquire(at: coordinator.leaseURL, mode: .exclusive)
+    // Retried rather than sampled once. Teardown has closed this process's copy of
+    // the lease, but the `flock` lives on the open file description, and any child
+    // another test in this process spawned moments ago holds inherited copies of
+    // every descriptor until it execs. What is being asserted is that teardown
+    // releases the lease, not that no unrelated process is mid-spawn.
+    var after: FileLock?
+    for _ in 0..<50 {
+      after = try FileLock.tryAcquire(at: coordinator.leaseURL, mode: .exclusive)
+      if after != nil { break }
+      try await Task.sleep(for: .milliseconds(20))
+    }
     #expect(after != nil)
     after?.release()
   }

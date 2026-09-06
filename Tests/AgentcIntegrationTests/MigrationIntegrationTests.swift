@@ -115,7 +115,7 @@ struct MigrationIntegrationTests {
       args: ["migrate-from-claudec"],
       env: ["HOME": fakeHome.path]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("Successfully migrated"))
     #expect(result.stdout.contains("profiles"))
     #expect(result.stdout.contains("configurations"))
@@ -161,7 +161,7 @@ struct MigrationIntegrationTests {
       args: ["migrate-from-claudec"],
       env: ["HOME": fakeHome.path]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("Nothing to migrate"))
   }
 
@@ -184,7 +184,7 @@ struct MigrationIntegrationTests {
       args: ["migrate-from-claudec"],
       env: ["HOME": fakeHome.path]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("already exists"))
   }
 }

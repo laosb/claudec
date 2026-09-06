@@ -1,6 +1,7 @@
 import Crypto
 import Foundation
 import Subprocess
+import Testing
 
 #if canImport(System)
   import System
@@ -15,6 +16,27 @@ struct ProcessOutput: Sendable {
   let stdout: String
   let stderr: String
   var output: String { stdout + stderr }
+
+  /// A one-line account of how the run ended, for ``expectSuccess(_:sourceLocation:)``
+  /// to compare against.
+  ///
+  /// The usual way to read a run is `swift test | grep 􀢄`, and swift-testing prints
+  /// an expectation's comment on the lines *after* the one carrying that marker — so
+  /// a message attached there is exactly what such a filter throws away. Comparing a
+  /// summary rather than the raw exit code puts the reason inside the expanded
+  /// expression, which is on the marker line itself and survives the filter.
+  var summary: String {
+    guard exitCode != 0 else { return "exited 0" }
+    let reason =
+      (stderr.isEmpty ? stdout : stderr)
+      .split(separator: "\n")
+      .map { $0.trimmingCharacters(in: .whitespaces) }
+      .filter { !$0.isEmpty }
+      .suffix(2)
+      .joined(separator: " / ")
+    guard !reason.isEmpty else { return "exited \(exitCode) with no output" }
+    return "exited \(exitCode): \(reason.suffix(400))"
+  }
 }
 
 func runAgentc(
@@ -47,15 +69,52 @@ func runAgentc(
       error: .string(limit: 512 * 1024)
     )
     let exitCode: Int32
+    var stderr = result.standardError
     switch result.terminationStatus {
-    case .exited(let code): exitCode = code
-    case .signaled(let sig): exitCode = sig
+    case .exited(let code):
+      exitCode = code
+    case .signaled(let sig):
+      // A signal is not an exit code. Reporting it as one turns "the binary never
+      // started" into a puzzling `exitCode == 9` with no output at all, so say what
+      // happened in the text the failing expectation prints.
+      exitCode = sig
+      stderr += "\n<agentc was killed by signal \(sig)"
+      stderr +=
+        sig == SIGKILL
+        ? "; on macOS a binary whose code signature no longer matches is killed at "
+          + "launch — rebuild it with ./build.sh>"
+        : ">"
     }
     return ProcessOutput(
-      exitCode: exitCode, stdout: result.standardOutput, stderr: result.standardError)
+      exitCode: exitCode, stdout: result.standardOutput, stderr: stderr)
   } catch {
     return ProcessOutput(exitCode: -1, stdout: "", stderr: "launch error: \(error)")
   }
+}
+
+// MARK: - Assertions
+
+/// Assert that an `agentc` run succeeded, and say why when it did not.
+///
+/// `#expect(result.exitCode == 0)` prints the number and nothing else, so every
+/// container failure — a boot that never came up, a mount that was refused, a
+/// configuration that could not be read — arrives as the same opaque line. The
+/// comparison is against ``ProcessOutput/summary`` so the reason travels on the
+/// failure line itself; the whole output follows as a comment for anyone reading
+/// the run unfiltered.
+func expectSuccess(
+  _ result: ProcessOutput,
+  sourceLocation: SourceLocation = #_sourceLocation
+) {
+  #expect(
+    result.summary == "exited 0",
+    """
+    --- stdout ---
+    \(result.stdout)
+    --- stderr ---
+    \(result.stderr)
+    """,
+    sourceLocation: sourceLocation)
 }
 
 func sha256Hex(_ string: String) -> String {

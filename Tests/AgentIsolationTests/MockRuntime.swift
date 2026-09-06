@@ -65,6 +65,8 @@ final class MockContainer: ContainerRuntimeContainer, @unchecked Sendable {
   var removed = false
   var resizeCalls: [(cols: Int, rows: Int)] = []
   var lastTimeoutInSeconds: Int64? = nil
+  /// Raised by ``stop()``, for testing what a wedged container leaves behind.
+  var stopError: (any Error)?
 
   init(id: String, exitCode: Int32) {
     self.id = id
@@ -78,6 +80,7 @@ final class MockContainer: ContainerRuntimeContainer, @unchecked Sendable {
 
   func stop() async throws {
     stopped = true
+    if let stopError { throw stopError }
   }
 
   func resize(cols: Int, rows: Int) async throws {

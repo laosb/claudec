@@ -23,7 +23,7 @@ struct BaseImageIntegrationTests {
         "--", "echo", "hello-from-debian",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("hello-from-debian"))
   }
 
@@ -39,7 +39,7 @@ struct BaseImageIntegrationTests {
         "--", "id",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("agent"))
   }
 
@@ -57,7 +57,7 @@ struct BaseImageIntegrationTests {
         "--", "echo", "hello-from-alpine",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("hello-from-alpine"))
   }
 
@@ -73,7 +73,7 @@ struct BaseImageIntegrationTests {
         "--", "id",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("agent"))
   }
 
@@ -91,7 +91,7 @@ struct BaseImageIntegrationTests {
         "--", "echo", "hello-from-buildpack",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("hello-from-buildpack"))
   }
 
@@ -107,7 +107,7 @@ struct BaseImageIntegrationTests {
         "--", "id",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("agent"))
   }
 
@@ -123,7 +123,7 @@ struct BaseImageIntegrationTests {
         "--", "git", "--version",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("git version"))
   }
 
@@ -141,7 +141,7 @@ struct BaseImageIntegrationTests {
         "--", "echo", "hello-from-swift",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("hello-from-swift"))
   }
 
@@ -160,7 +160,7 @@ struct BaseImageIntegrationTests {
         "--", "id",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("agent"))
   }
 
@@ -176,7 +176,7 @@ struct BaseImageIntegrationTests {
         "--", "whoami",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines) == "agent")
   }
 
@@ -194,7 +194,7 @@ struct BaseImageIntegrationTests {
         "--", "echo", "hello-from-bare-alpine",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("hello-from-bare-alpine"))
   }
 
@@ -210,7 +210,7 @@ struct BaseImageIntegrationTests {
         "--", "echo", "hello-from-bare-debian",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("hello-from-bare-debian"))
   }
 
@@ -226,7 +226,7 @@ struct BaseImageIntegrationTests {
         "--", "echo", "hello-from-bare-swift",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("hello-from-bare-swift"))
   }
 
@@ -249,7 +249,7 @@ struct BaseImageIntegrationTests {
       ]
     )
     // Without bootstrap, there's no agent user — runs as root
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("root"))
   }
 
@@ -277,7 +277,7 @@ struct BaseImageIntegrationTests {
         "--", "cat", "\(containerPath)/probe.txt",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("base_image_probe"))
   }
 }

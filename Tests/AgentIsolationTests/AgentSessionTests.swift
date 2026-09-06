@@ -1302,7 +1302,32 @@ struct AgentSessionCustomPTYTests {
     let container = try #require(runtime.lastContainer)
     #expect(container.lastTimeoutInSeconds == 42)
   }
+
+  @Test("A container that fails to stop still reports its exit code and is removed")
+  func failedStopKeepsExitCodeAndRemovesContainer() async throws {
+    let runtime = MockRuntime(config: .init(storagePath: "/tmp"))
+    runtime.containerExitCode = 42
+    let (session, base) = try makeSession(customPTY: false, runtime: runtime)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    try await session.start()
+    let container = try #require(runtime.lastContainer)
+    container.stopError = StopFailure()
+
+    // The workload already exited and its code is in hand; teardown comes after
+    // and has no standing to overrule it. On the Apple runtime the guest halts as
+    // soon as its init exits, so a `stop()` arriving a moment later reports "the
+    // virtual machine stopped unexpectedly" — and whether it arrives before or
+    // after the halt is a matter of host load, not of whether the run worked.
+    #expect(try await session.wait() == 42)
+    // Removal is what takes the session's rootfs — gigabytes of it on the Apple
+    // runtime — back off disk. A stop that reports a failure must not skip it.
+    #expect(container.removed)
+  }
 }
+
+/// Stands in for a container that cannot be stopped cleanly.
+private struct StopFailure: Error {}
 
 // MARK: - Container Resize Default Tests
 

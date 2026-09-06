@@ -336,6 +336,18 @@ public final class ProfileOwnershipCoordinator: Sendable {
       ? .verify : .repair
   }
 
+  /// How long a repair lease keeps probing before it declares the profile busy.
+  ///
+  /// `flock` belongs to the open file description rather than the process, so a
+  /// child this session spawned holds an inherited copy of every descriptor — the
+  /// shared lease among them — until it execs. Probing once turns that
+  /// sub-millisecond window into "the profile is in use by another agentc
+  /// session", advice the user cannot act on because the session it names is their
+  /// own. A window this short rides it out and still fails fast on a profile
+  /// somebody else really is holding.
+  static let repairLeaseWindow: TimeInterval = 1
+  static let repairLeaseInterval: useconds_t = 20_000
+
   /// Take the lease for `mode`.
   ///
   /// Repair takes the lock exclusively and refuses rather than waiting: holding a
@@ -348,10 +360,14 @@ public final class ProfileOwnershipCoordinator: Sendable {
     case .verify:
       return try FileLock.acquire(at: leaseURL, mode: .shared)
     case .repair:
-      guard let lock = try FileLock.tryAcquire(at: leaseURL, mode: .exclusive) else {
-        throw ProfileOwnershipError.profileBusy(profileDirectory.lastPathComponent)
+      let deadline = Date().addingTimeInterval(Self.repairLeaseWindow)
+      while true {
+        if let lock = try FileLock.tryAcquire(at: leaseURL, mode: .exclusive) { return lock }
+        guard Date() < deadline else {
+          throw ProfileOwnershipError.profileBusy(profileDirectory.lastPathComponent)
+        }
+        usleep(Self.repairLeaseInterval)
       }
-      return lock
     }
   }
 

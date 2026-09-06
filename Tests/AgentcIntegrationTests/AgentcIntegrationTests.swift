@@ -10,7 +10,7 @@ struct AgentcIntegrationTests {
   @Test("agentc version prints version info")
   func versionCommand() async throws {
     let result = await runAgentc(args: ["version"])
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("agentc"))
   }
 
@@ -46,7 +46,7 @@ struct AgentcIntegrationTests {
         "--", "echo", "hello",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("hello"))
   }
 
@@ -61,7 +61,7 @@ struct AgentcIntegrationTests {
         "--", "echo", "hello-from-sh",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("hello-from-sh"))
   }
 
@@ -82,7 +82,7 @@ struct AgentcIntegrationTests {
         "--", "echo", "ok",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(FileManager.default.fileExists(atPath: profileHome.path))
   }
 
@@ -105,7 +105,7 @@ struct AgentcIntegrationTests {
         "--", "cat", "/home/agent/sentinel.txt",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("sentinel_agentc"))
   }
 
@@ -151,7 +151,7 @@ struct AgentcIntegrationTests {
         "-c", "myagent",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("dependency_prepared"))
   }
 
@@ -176,7 +176,7 @@ struct AgentcIntegrationTests {
         "--", "cat", "\(containerPath)/probe.txt",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("ws_content_agentc"))
   }
 
@@ -198,7 +198,7 @@ struct AgentcIntegrationTests {
         "--", "pwd",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains(containerPath))
   }
 
@@ -221,7 +221,7 @@ struct AgentcIntegrationTests {
         "--", "printf '%s|' \"$PWD\"; cat probe.txt",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout == "\(ws.path)|host_scheme_content")
   }
 
@@ -244,7 +244,7 @@ struct AgentcIntegrationTests {
         "--", "cat", "\(shared.path)/probe.txt",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout == "additional_host_content")
   }
 
@@ -271,7 +271,7 @@ struct AgentcIntegrationTests {
         "--", "ls", "\(containerPath)/secret",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
   }
 
@@ -301,7 +301,7 @@ struct AgentcIntegrationTests {
         "--", "echo", "ok",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("custom_agentc_marker"))
   }
 
@@ -316,7 +316,7 @@ struct AgentcIntegrationTests {
         "--", "command", "-v", "bun",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("bun"))
   }
 
@@ -331,7 +331,7 @@ struct AgentcIntegrationTests {
         "--", "cat", "/etc/hosts",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("127.0.0.1"))
     #expect(result.output.contains("localhost"))
   }
@@ -347,7 +347,7 @@ struct AgentcIntegrationTests {
         "--", "cat", "/proc/1/cmdline",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     // When init is enabled, PID 1 should be an init process
     // (docker-init on Docker, vminitd on Apple Container).
     let cmdline = result.output
@@ -378,7 +378,7 @@ struct AgentcIntegrationTests {
       env: [:]
     )
     // The run command should forward "echo configurations-ok" to the entrypoint
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
   }
 
   @Test("--cpus flag is accepted and used")
@@ -393,7 +393,7 @@ struct AgentcIntegrationTests {
         "--", "nproc",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     // nproc should report the number of CPUs we requested
     let reported = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     #expect(reported == "2")
@@ -414,7 +414,7 @@ struct AgentcIntegrationTests {
         "--", "cat", "/sys/fs/cgroup/memory.max",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     let reported = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     #expect(reported == "\(limitBytes)")
   }
@@ -432,7 +432,7 @@ struct AgentcIntegrationTests {
         "--", "echo", "short-p",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("short-p"))
   }
 
@@ -457,7 +457,7 @@ struct AgentcIntegrationTests {
         "--", "cat", "\(containerPath)/probe.txt",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("short_w_content"))
   }
 
@@ -483,7 +483,7 @@ struct AgentcIntegrationTests {
       ],
       env: [:]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
   }
 
   // MARK: - Remaining arguments parsing
@@ -499,7 +499,7 @@ struct AgentcIntegrationTests {
         "echo", "no-separator",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("no-separator"))
   }
 
@@ -525,7 +525,7 @@ struct AgentcIntegrationTests {
       ],
       env: [:]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
   }
 
   // MARK: - --verbose flag
@@ -577,7 +577,7 @@ struct AgentcIntegrationTests {
       ]
     )
 
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout == "workload-output")
     #expect(result.stderr.contains("==> Running prepare.sh"))
     #expect(result.stderr.contains("prepare-stdout"))
@@ -595,7 +595,7 @@ struct AgentcIntegrationTests {
         "--", "echo", "ok",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(!result.stderr.contains("==> Running prepare.sh"))
   }
 
@@ -611,7 +611,7 @@ struct AgentcIntegrationTests {
         "--", "echo", "ok",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stderr.contains("==> Running prepare.sh"))
   }
 
@@ -627,7 +627,7 @@ struct AgentcIntegrationTests {
         "--", "echo", "ok",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stderr.contains("==> Running prepare.sh"))
   }
 }

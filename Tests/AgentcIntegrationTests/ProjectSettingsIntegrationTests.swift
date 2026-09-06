@@ -44,7 +44,7 @@ struct ProjectSettingsIntegrationTests {
         "--", "nproc",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     let reported = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     #expect(reported == "2")
   }
@@ -73,7 +73,7 @@ struct ProjectSettingsIntegrationTests {
         "--", "cat", "/sys/fs/cgroup/memory.max",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     let reported = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     #expect(reported == "\(limitBytes)")
   }
@@ -110,7 +110,7 @@ struct ProjectSettingsIntegrationTests {
         "--", "ls", "\(containerPath)/secret",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
   }
 
@@ -144,7 +144,7 @@ struct ProjectSettingsIntegrationTests {
       ]
     )
 
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout == "America/Los_Angeles|en_US.UTF-8")
   }
 
@@ -182,7 +182,7 @@ struct ProjectSettingsIntegrationTests {
         "--", "printf '%s|' \"$PWD\"; cat '\(shared.path)/probe.txt'",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout == "\(workspace.path)|settings_mount_content")
   }
 
@@ -212,7 +212,7 @@ struct ProjectSettingsIntegrationTests {
         "--", "nproc",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     let reported = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     #expect(reported == "3")
   }
@@ -243,7 +243,7 @@ struct ProjectSettingsIntegrationTests {
         "--", "pwd",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(
       result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
         == workspaceContainerPath(for: workspace))
@@ -280,7 +280,7 @@ struct ProjectSettingsIntegrationTests {
       ]
     )
 
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout == "Europe/Berlin|en_US.UTF-8")
   }
 
@@ -324,7 +324,7 @@ struct ProjectSettingsIntegrationTests {
         "--", "ls", "\(containerPath)/secret",
       ]
     )
-    #expect(resultSecret.exitCode == 0)
+    expectSuccess(resultSecret)
     #expect(resultSecret.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
 
     let resultVendor = await runAgentc(
@@ -339,7 +339,7 @@ struct ProjectSettingsIntegrationTests {
         "--", "ls", "\(containerPath)/vendor",
       ]
     )
-    #expect(resultVendor.exitCode == 0)
+    expectSuccess(resultVendor)
     #expect(resultVendor.stdout.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
   }
 
@@ -367,7 +367,7 @@ struct ProjectSettingsIntegrationTests {
       ],
       cwd: base.path
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     let reported = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     #expect(reported == "2")
   }
@@ -396,7 +396,7 @@ struct ProjectSettingsIntegrationTests {
       ],
       cwd: subdir.path
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     let reported = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     #expect(reported == "2")
   }
@@ -433,7 +433,7 @@ struct ProjectSettingsIntegrationTests {
       ],
       cwd: base.path
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     let reported = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     #expect(reported == "3")
   }
@@ -458,7 +458,7 @@ struct ProjectSettingsIntegrationTests {
       ],
       cwd: base.path
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     let reported = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     #expect(reported == "1")
   }

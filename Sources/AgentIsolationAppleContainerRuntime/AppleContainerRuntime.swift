@@ -53,6 +53,12 @@
       RootFSCache(imageStorePath: imageStorePath, diagnostics: diagnostics)
     }
 
+    /// The session directories `ContainerManager` writes each container's rootfs
+    /// into, and the lock discipline that tells a live one from a crash leftover.
+    private var sessionDirectories: SessionDirectoryStore {
+      SessionDirectoryStore(root: imageStorePath.appendingPathComponent("containers"))
+    }
+
     /// How host file ownership presents through Apple's virtiofs share.
     ///
     /// `isCharacterized` stays `false` until that has been measured on real
@@ -70,26 +76,26 @@
     /// `ContainerManager` keeps one directory per container and removes it on
     /// `delete`, so a directory that is still there means the session was never
     /// torn down — which is exactly the crashed-agentc case an ownership repair
-    /// must not run underneath.
+    /// must not run underneath. A directory whose owner lock nobody holds is the
+    /// one exception: its `agentc` is gone, and with it the in-process VM, so it
+    /// is leftover files rather than a session to protect.
     public func liveContainerIDs() async -> Set<String>? {
-      let root = imageStorePath.appendingPathComponent("containers")
-      guard
-        let entries = try? FileManager.default.contentsOfDirectory(
-          at: root, includingPropertiesForKeys: [.isDirectoryKey])
-      else {
-        // A missing directory means no containers, not "cannot tell".
-        return FileManager.default.fileExists(atPath: root.path) ? nil : []
-      }
-      return Set(
-        entries.filter {
-          (try? $0.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true
-        }.map(\.lastPathComponent))
+      sessionDirectories.liveIDs()
     }
 
     // MARK: - ContainerRuntime
 
     public func prepare() async throws {
       try FileManager.default.createDirectory(at: storagePath, withIntermediateDirectories: true)
+
+      // Reclaim the rootfs of any session whose agentc died before it could tear
+      // itself down. Each is up to the full session capacity, so without this a
+      // crash or an interrupted test run leaves gigabytes behind for good.
+      let sessions = sessionDirectories
+      diagnostics.span("containers.sweep") { context in
+        let removed = sessions.sweep()
+        context?.set("removed", removed)
+      }
 
       let kernel = try await getOrDownloadKernel()
 
@@ -274,23 +280,20 @@
         return image
       }
 
-      let sessionDirectory =
-        imageStorePath
-        .appendingPathComponent("containers")
-        .appendingPathComponent(containerID)
+      // The existing-rootfs `create` overload does not create this directory, but
+      // it still writes the boot log into it and `delete` still removes it. The
+      // lock taken with it marks the directory as owned for as long as this
+      // process lives, so a later run can tell it from a crash leftover.
+      let (sessionDirectory, sessionLock) = try sessionDirectories.claim(id: containerID)
       let sessionRootfs = sessionDirectory.appendingPathComponent("rootfs.ext4")
 
-      // The existing-rootfs `create` overload does not create this directory, but
-      // it still writes the boot log into it and `delete` still removes it.
-      try FileManager.default.createDirectory(
-        at: sessionDirectory, withIntermediateDirectories: true)
-
-      let rootfsMount: Mount
+      let rootfsMount: Containerization.Mount
       do {
         rootfsMount = try await materializeRootFS(
           image: resolvedImage, reference: resolvedRef, at: sessionRootfs)
       } catch {
         terminal?.tryReset()
+        sessionLock?.release()
         try? FileManager.default.removeItem(at: sessionDirectory)
         throw error
       }
@@ -303,6 +306,12 @@
           rootfs: rootfsMount
         ) { containerConfig in
           containerConfig.cpus = configuration.cpuCount
+          // `--cpus N` promises the agent N cores, and `nproc` inside the guest is
+          // what build tools read to size their own parallelism. Containerization
+          // adds a core to the VM on top of the container's share by default, which
+          // would make the guest report N + 1. The container's CPU quota is N either
+          // way; this keeps the count the guest sees honest as well.
+          containerConfig.cpuOverhead = 0
           containerConfig.memoryInBytes = UInt64(configuration.memoryLimitMiB).mib()
 
           containerConfig.hosts = .default
@@ -355,6 +364,7 @@
         // files back out and restore the terminal.
         terminal?.tryReset()
         try? manager.releaseNetwork(containerID)
+        sessionLock?.release()
         try? FileManager.default.removeItem(at: sessionDirectory)
         throw error
       }
@@ -368,6 +378,10 @@
         try? await container.stop()
         terminal?.tryReset()
         try? manager.delete(containerID)
+        sessionLock?.release()
+        // `delete` gives up at its first failure, so the directory — and the
+        // session rootfs inside it — can still be there.
+        try? FileManager.default.removeItem(at: sessionDirectory)
         throw error
       }
 
@@ -379,7 +393,9 @@
         id: containerID,
         container: container,
         manager: manager,
-        terminal: terminal
+        terminal: terminal,
+        sessionDirectory: sessionDirectory,
+        sessionLock: sessionLock
       )
     }
 
@@ -396,11 +412,11 @@
       image: Containerization.Image,
       reference: String,
       at sessionRootfs: URL
-    ) async throws -> Mount {
+    ) async throws -> Containerization.Mount {
       let capacity = Self.rootfsCapacityBytes
 
       let unpack: (URL) async throws -> Void = { destination in
-        let unpacker = EXT4Unpacker(blockSizeInBytes: capacity)
+        let unpacker = EXT4Unpacker(capacityInBytes: capacity)
         _ = try await unpacker.unpack(image, for: .current, at: destination, progress: nil)
       }
 
@@ -449,7 +465,7 @@
       return Self.blockMount(at: sessionRootfs)
     }
 
-    private static func blockMount(at path: URL) -> Mount {
+    private static func blockMount(at path: URL) -> Containerization.Mount {
       .block(format: "ext4", source: path.path, destination: "/", options: [])
     }
 
@@ -458,10 +474,34 @@
       imageStore = nil
     }
 
+    /// Stop a container and take its session files back out.
+    ///
+    /// The session rootfs is up to ``rootfsCapacityBytes`` and is worthless once
+    /// the session ends, so every step runs even after an earlier one failed: a
+    /// stop that reports an error must not be the reason gigabytes stay on disk.
+    /// The first error is still raised once nothing is left behind.
     public func removeContainer(_ container: AppleContainerContainer) async throws {
       container.terminal?.tryReset()
-      try await container.underlyingContainer.stop()
-      try container.manager.delete(container.id)
+
+      var failure: (any Error)?
+      do {
+        try await container.underlyingContainer.stop()
+      } catch {
+        failure = error
+      }
+      do {
+        try container.manager.delete(container.id)
+      } catch {
+        failure = failure ?? error
+      }
+
+      container.sessionLock?.release()
+      // `delete` releases the network first and gives up if that fails, leaving
+      // the directory in place. Removing it here is safe even after a failed
+      // stop: the VM runs inside this process and cannot outlive it.
+      try? FileManager.default.removeItem(at: container.sessionDirectory)
+
+      if let failure { throw failure }
     }
 
     // MARK: - Image Reference Normalization
@@ -586,17 +626,26 @@
     let underlyingContainer: LinuxContainer
     var manager: ContainerManager
     var terminal: Terminal?
+    /// This session's directory, holding its writable rootfs and boot log.
+    let sessionDirectory: URL
+    /// Held for the container's whole life: while this lock exists, another
+    /// `agentc` reads the session directory as live rather than as leftovers.
+    let sessionLock: FileLock?
 
     init(
       id: String,
       container: LinuxContainer,
       manager: ContainerManager,
-      terminal: Terminal?
+      terminal: Terminal?,
+      sessionDirectory: URL,
+      sessionLock: FileLock?
     ) {
       self.id = id
       self.underlyingContainer = container
       self.manager = manager
       self.terminal = terminal
+      self.sessionDirectory = sessionDirectory
+      self.sessionLock = sessionLock
     }
 
     public func wait(timeoutInSeconds: Int64?) async throws -> Int32 {

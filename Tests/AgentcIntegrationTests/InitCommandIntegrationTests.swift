@@ -22,7 +22,7 @@ struct InitCommandIntegrationTests {
         "--skip-container-init",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
 
     let settingsPath = base.appendingPathComponent(".agentc/settings.json")
     #expect(FileManager.default.fileExists(atPath: settingsPath.path))
@@ -60,7 +60,7 @@ struct InitCommandIntegrationTests {
         "-e", "EMPTY=",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
 
     let settingsPath = base.appendingPathComponent(".agentc/settings.json")
     let data = try Data(contentsOf: settingsPath)
@@ -133,7 +133,7 @@ struct InitCommandIntegrationTests {
         "--profile", "work",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
 
     let settingsPath = base.appendingPathComponent(".agentc/settings.json")
     let data = try Data(contentsOf: settingsPath)
@@ -159,7 +159,7 @@ struct InitCommandIntegrationTests {
         "--skip-container-init",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
 
     let settingsPath = base.appendingPathComponent(".agentc/settings.json")
     #expect(!FileManager.default.fileExists(atPath: settingsPath.path))
@@ -181,7 +181,7 @@ struct InitCommandIntegrationTests {
       ],
       cwd: base.path
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
 
     let settingsPath = base.appendingPathComponent(".agentc/settings.json")
     #expect(FileManager.default.fileExists(atPath: settingsPath.path))
@@ -202,7 +202,7 @@ struct InitCommandIntegrationTests {
         "--skip-container-init",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
 
     let settingsPath = targetDir.appendingPathComponent(".agentc/settings.json")
     #expect(FileManager.default.fileExists(atPath: settingsPath.path))
@@ -224,7 +224,7 @@ struct InitCommandIntegrationTests {
         "--skip-container-init",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("agentc run"))
     #expect(result.output.contains("agentc sh"))
   }
@@ -243,7 +243,7 @@ struct InitCommandIntegrationTests {
         "--skip-container-init",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains(".agentc/settings.json"))
   }
 
@@ -265,7 +265,7 @@ struct InitCommandIntegrationTests {
         "--cpus", "2",
       ]
     )
-    #expect(initResult.exitCode == 0)
+    expectSuccess(initResult)
 
     // Verify agentc picks up the generated settings via CWD discovery
     let verifyResult = await runAgentc(
@@ -278,7 +278,7 @@ struct InitCommandIntegrationTests {
       ],
       cwd: base.path
     )
-    #expect(verifyResult.exitCode == 0)
+    expectSuccess(verifyResult)
     let reported = verifyResult.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
     #expect(reported == "2")
   }
@@ -302,7 +302,7 @@ struct InitCommandIntegrationTests {
         "--skip-project-settings",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("Container environment initialized"))
   }
 
@@ -320,7 +320,7 @@ struct InitCommandIntegrationTests {
         "--skip-container-init",
       ]
     )
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(!result.output.contains("Initializing container environment"))
   }
 }

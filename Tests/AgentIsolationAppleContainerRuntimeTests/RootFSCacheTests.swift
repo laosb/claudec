@@ -679,6 +679,21 @@
 
   // MARK: - Locking
 
+  /// Take a lock that a holder in this process has just released, retrying briefly.
+  ///
+  /// `flock` lives on the open file description rather than the process, and a child
+  /// that another test spawned moments ago holds inherited copies of every
+  /// descriptor until it execs — so `close()` here does not always free the lock on
+  /// the instant. The release under test has already happened; what the retry waits
+  /// out is an unrelated process mid-spawn.
+  private func awaitFreeLock(at url: URL) throws -> FileLock? {
+    for _ in 0..<50 {
+      if let lock = try FileLock.tryAcquire(at: url, mode: .exclusive) { return lock }
+      Thread.sleep(forTimeInterval: 0.02)
+    }
+    return nil
+  }
+
   @Suite("Cache file locks")
   struct FileLockTests {
 
@@ -690,7 +705,7 @@
       let first = try FileLock.acquire(at: file, mode: .exclusive)
       #expect(try FileLock.tryAcquire(at: file, mode: .exclusive) == nil)
       first.release()
-      let second = try FileLock.tryAcquire(at: file, mode: .exclusive)
+      let second = try awaitFreeLock(at: file)
       #expect(second != nil)
       second?.release()
     }
@@ -702,7 +717,7 @@
       let lock = try FileLock.acquire(at: file, mode: .exclusive)
       lock.release()
       lock.release()
-      let again = try FileLock.tryAcquire(at: file, mode: .exclusive)
+      let again = try awaitFreeLock(at: file)
       #expect(again != nil)
       again?.release()
     }

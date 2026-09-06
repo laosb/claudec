@@ -32,7 +32,7 @@ struct ProfilesCommandIntegrationTests {
     try createProfile("bob", in: storage)
 
     let result = await runAgentc(args: ["profiles", "--profiles-dir", storage.path])
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     let names =
       result.stdout
       .split(separator: "\n")
@@ -47,7 +47,7 @@ struct ProfilesCommandIntegrationTests {
     defer { try? FileManager.default.removeItem(at: storage) }
 
     let result = await runAgentc(args: ["profiles", "list", "--profiles-dir", storage.path])
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("No profiles found"))
   }
 
@@ -60,7 +60,7 @@ struct ProfilesCommandIntegrationTests {
 
     let result = await runAgentc(
       args: ["profiles", "list", "--profiles-dir", storage.path, "--verbose"])
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("name:          alice"))
     #expect(result.stdout.contains("home:"))
     #expect(result.stdout.contains("size:"))
@@ -78,7 +78,7 @@ struct ProfilesCommandIntegrationTests {
 
     let result = await runAgentc(
       args: ["profiles", "list", "alice", "--profiles-dir", storage.path])
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("name:          alice"))
     #expect(!result.stdout.contains("name:          bob"))
   }
@@ -105,7 +105,7 @@ struct ProfilesCommandIntegrationTests {
 
     let result = await runAgentc(
       args: ["profiles", "remove", "--profiles-dir", storage.path, "alice"])
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.stdout.contains("removed profile \"alice\""))
 
     #expect(!FileManager.default.fileExists(atPath: storage.appendingPathComponent("alice").path))
@@ -121,7 +121,7 @@ struct ProfilesCommandIntegrationTests {
 
     let result = await runAgentc(
       args: ["profiles", "rm", "--profiles-dir", storage.path, "alice"])
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(!FileManager.default.fileExists(atPath: storage.appendingPathComponent("alice").path))
   }
 
@@ -143,7 +143,7 @@ struct ProfilesCommandIntegrationTests {
 
     let result = await runAgentc(
       args: ["profiles", "rm", "--profiles-dir", storage.path, "--force", "ghost"])
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
   }
 
   @Test("agentc profiles rm accepts multiple names")
@@ -157,7 +157,7 @@ struct ProfilesCommandIntegrationTests {
 
     let result = await runAgentc(
       args: ["profiles", "rm", "--profiles-dir", storage.path, "alice", "charlie"])
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
 
     #expect(!FileManager.default.fileExists(atPath: storage.appendingPathComponent("alice").path))
     #expect(FileManager.default.fileExists(atPath: storage.appendingPathComponent("bob").path))

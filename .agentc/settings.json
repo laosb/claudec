@@ -1,5 +1,8 @@
 {
   "agent": {
+    "additionalMounts": [
+      "../agent-isolation-configurations"
+    ],
     "configurations": ["claude"],
     "cpus": 4,
     "image": "swift:6.3",

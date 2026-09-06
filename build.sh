@@ -153,5 +153,9 @@ if [[ "${NEED_SIGN}" == true ]] && [[ "$(uname -s)" == "Darwin" ]] && [[ -z "${S
     codesign --sign - --entitlements "${AGENTC_ENTITLEMENTS}" --force "${BUILT_BINARY}"
 fi
 
-cp "${BUILT_BINARY}" "${OUTPUT_BINARY}"
+# Land the binary by rename, never by writing over the file already sitting there.
+STAGED_BINARY="${OUTPUT_BINARY}.staged.$$"
+trap 'rm -f "${STAGED_BINARY}"' EXIT
+cp "${BUILT_BINARY}" "${STAGED_BINARY}"
+mv -f "${STAGED_BINARY}" "${OUTPUT_BINARY}"
 echo "Done → ${OUTPUT_BINARY}"

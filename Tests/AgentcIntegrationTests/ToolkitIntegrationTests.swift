@@ -96,7 +96,7 @@ struct ToolkitIntegrationTests {
       image: "docker.io/library/debian:latest",
       command: "command -v curl jq rg && curl --version | head -1 && rg --version | head -1")
 
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("/agent-isolation/toolkit/bin/curl"))
     #expect(result.output.contains("/agent-isolation/toolkit/bin/jq"))
     #expect(result.output.contains("/agent-isolation/toolkit/bin/rg"))
@@ -111,7 +111,7 @@ struct ToolkitIntegrationTests {
       image: "docker.io/library/buildpack-deps:scm",
       command: "command -v curl")
 
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("/usr/bin/curl"))
     #expect(!result.output.contains("/agent-isolation/toolkit/bin/curl"))
   }
@@ -123,7 +123,7 @@ struct ToolkitIntegrationTests {
       command: "command -v rg || echo no-ripgrep",
       toolkit: false)
 
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("no-ripgrep"))
     #expect(!result.output.contains("/agent-isolation/toolkit"))
   }
@@ -139,7 +139,7 @@ struct ToolkitIntegrationTests {
         curl -fsS -o /dev/null -w 'status=%{http_code}\\n' https://github.com/
         """)
 
-    #expect(result.exitCode == 0)
+    expectSuccess(result)
     #expect(result.output.contains("status=200"))
 
     // The bundled roots are a fallback, not an override: whichever branch the

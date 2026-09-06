@@ -159,7 +159,7 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
       // A crashed agentc releases its lease but may leave its container running
       // with this profile still mounted. Repairing underneath it would corrupt a
       // live session.
-      try await coordinator.assertNoSurvivingSessions(
+      try coordinator.assertNoSurvivingSessions(
         liveContainerIDs: await runtime.liveContainerIDs())
     }
     var lease = try coordinator.acquireLease(for: mode)
@@ -232,7 +232,7 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
         mode = .repair
         // The record described a state the guest does not see, so it is wrong.
         coordinator.discardRecord()
-        try await coordinator.assertNoSurvivingSessions(
+        try coordinator.assertNoSurvivingSessions(
           liveContainerIDs: await runtime.liveContainerIDs())
         lease = try coordinator.acquireLease(for: .repair)
 
@@ -438,7 +438,7 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
     // private to this session and carries only this session's expected ownership
     // data — never the host state directory, and never its lock.
     var controlDirectory: URL?
-    if let ownership {
+    if ownership != nil {
       let dir = try makeTempDir()
       tempDirs.append(dir)
       controlDirectory = dir
@@ -577,7 +577,17 @@ public final class AgentSession<Runtime: ContainerRuntime>: Sendable {
       await cleanup(container: container)
       throw error
     }
-    try await container.stop()
+    // Past this line the run has an answer, and teardown cannot take it back.
+    //
+    // The workload's exit code is already in hand, which means its init has
+    // exited and the guest is halting of its own accord. A `stop()` that arrives
+    // after the halt finishes reports "the virtual machine stopped unexpectedly"
+    // about a machine that stopped exactly as expected — and letting that decide
+    // the run would replace the container's own exit code with a failure, for a
+    // container that ran correctly and whose output the user has already seen.
+    // Whether the stop landed before or after that point is a matter of host
+    // load, so propagating it makes an unrelated success fail at random.
+    try? await container.stop()
     await cleanup(container: container)
     return exitCode
   }
